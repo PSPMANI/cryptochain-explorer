@@ -145,7 +145,6 @@ function renderDetail(x, stale) {
   });
 
   document.getElementById('ex-watch')?.addEventListener('click', async () => {
-    if (!auth.user) { location.hash = '#/login?next=' + encodeURIComponent(location.hash); return; }
     try {
       for (const w of main.slice(0, 10)) await addWatch(w.chainId, w.address, w.label);
       toast(`Watching ${Math.min(10, main.length)} ${x.name} wallets: alerts appear in your account`);

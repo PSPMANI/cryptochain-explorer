@@ -27,8 +27,6 @@ const CAT_COLOR = { exchange: 'var(--cat-exchange)', bridge: 'var(--cat-bridge)'
 const hasHistory = c => c.adapter !== 'evmrpc' || c.historyApi || ETHERSCAN_API_KEY;
 
 export async function investigatePage(chainsParam, address, params, stale) {
-  await auth.ready;
-  if (!auth.user) { location.replace('#/login?next=' + encodeURIComponent(location.hash)); return; }
   const requested = (chainsParam || '').split(',').filter(id => CHAIN[id]);
   if (!requested.length || !address) { main.innerHTML = '<div class="card error">Open Investigate from an address page.</div>'; return; }
   const first = CHAIN[requested[0]];

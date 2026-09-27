@@ -16,7 +16,8 @@ import { isWatched, addWatch, removeWatch, pushAlerts, unreadAlerts, listLabels,
 import { inspectTx, depositCheck, entityBadge } from './alerts.js';
 import { resolveBridgeTx } from './crosschain.js';
 import { startMonitor } from './monitor.js';
-import { loginPage, accountPage } from './pages/account.js';
+import { accountPage } from './pages/account.js';
+import { initShell } from './shell.js';
 import { investigatePage } from './pages/investigate.js';
 import { exchangesPage } from './pages/exchanges.js';
 import { mountOutgoing } from './pages/xfers.js';
@@ -42,11 +43,12 @@ async function route() {
   window.scrollTo(0, 0);
   const stale = () => id !== routeId;
   try {
-    if (a && a !== 'login' && a !== 'account') await loadNonEvmLabels();   // exchange wallets on Solana, Bitcoin, TRON, …
+    if (a && a !== 'account') await loadNonEvmLabels();   // exchange wallets on Solana, Bitcoin, TRON, …
     if (!a) return await homePage(stale);
     if (a === 'search') return await searchPage([b, c].filter(Boolean).join('/'), stale);
-    if (a === 'login') return await loginPage(stale, params.get('next') || '#/account');
+    if (a === 'login') { location.replace('#/account'); return; }       // old links
     if (a === 'account') return await accountPage(stale);
+    if (a === 'investigate-start') return investigateStart();
     if (a === 'investigate') return await investigatePage(b, c, params, stale);
     if (a === 'exchanges') return await exchangesPage(stale, b || 'all', c || null);
     if (!CHAIN[a]) return showError(`Unknown network "${a}".`);
@@ -171,20 +173,34 @@ async function homePage(stale) {
   document.title = 'CryptChain Explorer · Multichain block explorer';
   setQuery('');
   const recent = getRecent();
+  const live = CHAINS.filter(c => !c.testnet).length;
+  const feature = (href, icon, title, text) => `<a class="feature-x" href="${href}"><span class="fx-i">${icon}</span><b>${title}</b><span>${text}</span></a>`;
   main.innerHTML = `
-    <section class="hero">
-      <h1>Explore <span>${CHAINS.filter(c => !c.testnet).length} blockchains</span> in one place</h1>
-      <p>Look up any wallet address, transaction hash, or name (like <code>vitalik.eth</code>). CryptChain works out the network for you.</p>
-      <form class="search big"><input name="q" placeholder="Search address, tx hash, ENS or .near name" autocomplete="off" spellcheck="false" aria-label="Search"><button class="btn">Search</button></form>
-      <div class="samples">Try:
-        <a href="#/search/vitalik.eth">vitalik.eth</a>
-        <a href="#/bitcoin/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa">Satoshi's address</a>
-        <a href="#/bitcoin/tx/a1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d">Bitcoin pizza tx</a>
-        <a href="#/tron/address/TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t">USDT on TRON</a>
-        <a href="#/solana/address/TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA">Solana token program</a>
+    <section class="hero-x">
+      <span class="hero-badge"><span class="pulse"></span> Live on ${live} blockchains · free · no sign-in</span>
+      <h1>Trace any wallet across <span class="grad">every chain</span>, down to the exchange.</h1>
+      <p class="lead">Paste a wallet address, transaction hash or name. CryptChain finds the network, names the exchanges and follows the money hop by hop.</p>
+      <form class="search hero-search"><input name="q" placeholder="Address, tx hash, vitalik.eth, root.near or an exchange name" autocomplete="off" spellcheck="false" aria-label="Search"><button class="btn">Search</button></form>
+      <div class="quick">
+        <a href="#/search/vitalik.eth">◎ vitalik.eth</a>
+        <a href="#/bitcoin/address/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa">₿ Satoshi's address</a>
+        <a href="#/bitcoin/tx/a1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d">🍕 Bitcoin pizza tx</a>
+        <a href="#/tron/address/TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t">₮ USDT on TRON</a>
+        ${INDIAN_EXCHANGES.slice(0, 4).map(n => `<a href="#/exchanges/india/${encodeURIComponent(n)}">🇮🇳 ${esc(n)}</a>`).join('')}
       </div>
-      <div class="samples india">🇮🇳 Indian exchanges: ${INDIAN_EXCHANGES.slice(0, 8).map(n => `<a href="#/exchanges/india/${encodeURIComponent(n)}">${esc(n)}</a>`).join('')}<a href="#/exchanges/india">All ${INDIAN_EXCHANGES.length} →</a> · <a href="#/exchanges/all">🌐 All ${DIRECTORY.length} exchanges & institutions →</a></div>
-      ${recent.length ? `<div class="samples recent">Recent: ${recent.map(r => `<a href="${esc(r.href)}">${chainDot(CHAIN[r.chainId])}${esc(r.label)}</a>`).join('')}</div>` : ''}
+      ${recent.length ? `<div class="quick">${recent.map(r => `<a href="${esc(r.href)}">${chainDot(CHAIN[r.chainId])}${esc(r.label)}</a>`).join('')}</div>` : ''}
+    </section>
+    <section class="kpi-strip">
+      <div class="kpi-x"><div class="k">Networks</div><div class="v" id="kpi-live">${live}</div><div class="s" id="kpi-live-s">connecting…</div></div>
+      <div class="kpi-x"><div class="k">Labeled wallets</div><div class="v">15k+</div><div class="s">exchanges, funds, bridges</div></div>
+      <div class="kpi-x"><div class="k">Exchanges & institutions</div><div class="v">${DIRECTORY.length.toLocaleString()}</div><div class="s">${INDIAN_EXCHANGES.length} Indian exchanges</div></div>
+      <div class="kpi-x"><div class="k">Refresh</div><div class="v">${LIVE_INTERVAL.dashboard / 1000}s</div><div class="s">blocks & prices, live</div></div>
+    </section>
+    <section class="feature-grid">
+      ${feature('#/investigate-start', '⌖', 'Investigate', 'Incoming and outgoing flows, counterparties, charts and a hop-by-hop money trail.')}
+      ${feature('#/investigate-start', '⇶', 'Follow the money', 'Track the whole balance through every hop to its final exchanges and wallets.')}
+      ${feature('#/account', '🔔', 'Live alerts', 'Watch wallets and get flagged the moment funds hit an exchange or bridge.')}
+      ${feature('#/exchanges/all', '⬡', 'Exchange directory', 'Global and Indian exchanges with their verified hot, cold and deposit wallets.')}
     </section>
     <section>
       <div class="section-head"><h2><span class="live-dot"></span> Live networks</h2>
@@ -244,6 +260,44 @@ async function refreshNets(stale) {
       state.className = 'net-state err'; state.title = 'Unavailable: ' + e.message;
     }
   });
+  if (!stale()) updateLiveCount();
+}
+
+function updateLiveCount() {
+  const total = CHAINS.filter(c => !c.testnet).length;
+  const ok = CHAINS.filter(c => !c.testnet && document.querySelector(`#net-${c.id} .net-state.ok`)).length;
+  if (!ok) return;
+  document.getElementById('net-count').textContent = `${ok} of ${total} networks live`;
+  const k = document.getElementById('kpi-live'), ks = document.getElementById('kpi-live-s');
+  if (k) { k.textContent = ok; ks.textContent = `of ${total} live right now`; }
+}
+
+// ---------------------------------------------------------------- investigate: start page
+function investigateStart() {
+  document.title = 'Investigate · CryptChain';
+  setQuery('');
+  main.innerHTML = `
+    <div class="card start-card">
+      <span class="hero-badge">⌖ Investigation</span>
+      <h1 class="page-title" style="margin-top:14px">Which wallet do you want to investigate?</h1>
+      <p class="muted">Paste an address on any supported network. We find where it is active, then trace every incoming and outgoing transfer.</p>
+      <form class="hero-search" id="inv-start"><input id="inv-addr" placeholder="Wallet address (0x…, bc1…, T…, Solana, TON, XRP…)" autocomplete="off" spellcheck="false" aria-label="Wallet address"><button class="btn">Start</button></form>
+      <p class="small" id="inv-msg" style="min-height:1.4em"></p>
+      <div class="start-steps">
+        <div><b>1 · Flows</b><span class="muted small">Every transfer in and out, grouped by counterparty and token, with charts.</span></div>
+        <div><b>2 · Follow the money</b><span class="muted small">The balance is traced hop by hop until it reaches exchanges or rests.</span></div>
+        <div><b>3 · Report</b><span class="muted small">Download a plain-language report with timestamps, hops and CSV data.</span></div>
+      </div>
+    </div>`;
+  const input = document.getElementById('inv-addr'), msg = document.getElementById('inv-msg');
+  input.focus();
+  document.getElementById('inv-start').onsubmit = e => {
+    e.preventDefault();
+    const q = input.value.trim();
+    const ids = detect(q).filter(c => c.kind === 'address' && !CHAIN[c.chainId].testnet).map(c => c.chainId);
+    if (!ids.length) { msg.textContent = 'That doesn’t look like a wallet address on a supported network.'; return; }
+    location.hash = `#/investigate/${ids.join(',')}/${encodeURIComponent(q)}`;
+  };
 }
 
 // ---------------------------------------------------------------- address page
@@ -294,8 +348,7 @@ async function addressPage(chainId, addr, stale) {
     <div class="card" id="alerts-card">
       <div class="section-head"><h2>⚡ Flow alerts</h2><span class="muted small" id="alerts-state"></span></div>
       <div id="alerts" class="alert-list">${signedIn ? '<div class="muted small">Checking recent transfers for exchanges and bridges…</div>'
-        : `<div class="teaser"><p>See instantly when this wallet sends to an <b>exchange</b> (including deposit addresses) or <b>bridges to another chain</b>, and where the money lands.</p>
-           <a class="btn" href="#/login?next=${encodeURIComponent(location.hash)}">Sign in to unlock</a></div>`}</div>
+        : ''}</div>
     </div>
     ${info.tokens && info.tokens.length ? tokenCard(info.tokens) : ''}
     <div class="card">
@@ -306,13 +359,12 @@ async function addressPage(chainId, addr, stale) {
       <div class="more" id="more"></div>
     </div>`;
 
-  // Watch button (sign-in required)
+  // Watch button
   const watchBtn = document.getElementById('watch-btn');
   let watched = signedIn ? await isWatched(chainId, addr) : null;
   const paintWatch = () => { watchBtn.textContent = watched ? '✓ Watching' : '👁 Watch'; watchBtn.classList.toggle('on', !!watched); };
   paintWatch();
   watchBtn.onclick = async () => {
-    if (!auth.user) { location.hash = '#/login?next=' + encodeURIComponent(location.hash); return; }
     if (watched) { await removeWatch(watched.id); watched = null; toast('Removed from watchlist'); }
     else { watched = await addWatch(chainId, addr, name || ''); toast('Watching: alerts will appear in your account'); }
     paintWatch();
@@ -323,7 +375,6 @@ async function addressPage(chainId, addr, stale) {
   const mine = customLabelOf(chain, addr);
   document.getElementById('label-btn').textContent = mine ? '🏷 Edit label' : '🏷 Label';
   document.getElementById('label-btn').onclick = () => {
-    if (!auth.user) { location.hash = '#/login?next=' + encodeURIComponent(location.hash); return; }
     const f = document.getElementById('label-form');
     f.hidden = !f.hidden;
     if (f.hidden) return;
@@ -661,16 +712,14 @@ function txView(tx, chain, price, bridge) {
 async function renderAccountNav() {
   await auth.ready;
   const el = document.getElementById('acct');
-  if (!auth.user) { el.innerHTML = `<a class="btn small-btn" href="#/login?next=${encodeURIComponent(location.hash || '#/')}">Sign in</a>`; return; }
   const n = unreadAlerts();
   el.innerHTML = `<a class="bell" href="#/account" title="Flow alerts">🔔${n ? `<span class="badge">${n > 99 ? '99+' : n}</span>` : ''}</a>
-    <a class="avatar-link" href="#/account" title="${esc(auth.user.email)}">${identicon(auth.user.email, 30)}</a>`;
+    <a class="hdr-link small" href="#/account" title="Watchlist, alerts, labels and saved investigations">📋 My workspace</a>`;
 }
 auth.onChange(renderAccountNav);
 const loadMyLabels = async () => { try { setCustomLabels(await listLabels()); } catch { setCustomLabels([]); } };
 auth.onChange(() => loadMyLabels());
 window.addEventListener('alerts-changed', renderAccountNav);
-window.addEventListener('hashchange', () => { if (!auth.user) renderAccountNav(); });
 
 // ---------------------------------------------------------------- misc UI
 document.addEventListener('click', e => {
@@ -690,6 +739,7 @@ function addRecent(r) {
 }
 
 document.getElementById('net-count').textContent = `${CHAINS.filter(c => !c.testnet).length} networks`;
+initShell({ search: submitSearch, recent: getRecent });
 renderAccountNav();
 startMonitor();
 auth.ready.then(loadMyLabels).finally(route);

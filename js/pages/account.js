@@ -1,73 +1,21 @@
-// Login + account pages.
+// My workspace: alerts, watchlist, labels and saved investigations (kept in this browser).
 import { CHAIN } from '../chains.js';
 import { detect } from '../detect.js';
-import { auth, signInEmail, signInGoogle, signOut } from '../auth.js';
 import { listWatch, addWatch, removeWatch, listInvestigations, removeInvestigation, listAlerts, markAlertsRead, listLabels, removeLabel } from '../store.js';
 import { setCustomLabels, CATEGORY_LABEL, flag } from '../entities.js';
 import { main, adapter, withTimeout, toast } from '../core.js';
 import { getPrices, priceOf } from '../prices.js';
-import { esc, short, amount, usd, identicon, chainDot, link, timeCell } from '../ui.js';
+import { esc, short, amount, usd, chainDot, link, timeCell } from '../ui.js';
 import { alertItem, notificationsButton } from './shared.js';
-
-export const FEATURES = [
-  ['🔎', 'Investigate workflow', 'Full history across chains, money-flow diagram, counterparties, CSV export'],
-  ['⚡', 'Live flow alerts', 'Instantly see when a wallet sends to an exchange or bridges to another chain'],
-  ['👁', 'Watchlist', 'Monitor wallets in the background with browser notifications'],
-  ['💾', 'Saved investigations', 'Keep your cases and reopen them any time'],
-];
-
-export async function loginPage(stale, next = '#/account') {
-  await auth.ready;
-  if (auth.user) { location.replace(next); return; }
-  document.title = 'Sign in · CryptChain';
-  const demo = auth.mode === 'demo';
-  main.innerHTML = `
-    <div class="login-wrap">
-      <div class="card login">
-        <h1>Sign in to CryptChain</h1>
-        <p class="muted">The explorer is free for everyone. Signing in unlocks the investigation tools.</p>
-        ${demo ? `<div class="notice demo"><b>Demo mode.</b> Accounts are stored only in this browser and emails are not verified.
-          Connect Supabase in <code>js/config.js</code> before launch (see README).</div>` : ''}
-        <form id="login-form" class="stack">
-          ${demo ? '<label>Name <input name="name" autocomplete="name" placeholder="Your name"></label>' : ''}
-          <label>Email <input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
-          <button class="btn">${demo ? 'Continue (demo)' : 'Email me a sign-in link'}</button>
-        </form>
-        ${demo ? '' : `<div class="or"><span>or</span></div><button class="btn ghost wide" id="google">Continue with Google</button>`}
-        <p class="muted small" id="login-msg"></p>
-      </div>
-      <div class="features">${FEATURES.map(([i, t, d]) => `<div class="feature"><span class="fi">${i}</span><div><b>${t}</b><div class="muted small">${d}</div></div></div>`).join('')}</div>
-    </div>`;
-  const msg = document.getElementById('login-msg');
-  document.getElementById('login-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    e.stopPropagation();
-    const f = new FormData(e.target);
-    const btn = e.target.querySelector('button');
-    btn.disabled = true;
-    try {
-      const r = await signInEmail(f.get('email') || '', f.get('name') || '');
-      if (r.sent) msg.textContent = 'Check your inbox for the sign-in link.';
-      else { toast(`Signed in as ${auth.user.name}`); location.replace(next); }
-    } catch (err) { msg.textContent = err.message; }
-    btn.disabled = false;
-  });
-  document.getElementById('google')?.addEventListener('click', () => signInGoogle().catch(err => { msg.textContent = err.message; }));
-}
 
 let accountAlertsHandler = () => {};
 
 export async function accountPage(stale) {
-  await auth.ready;
-  if (!auth.user) { location.replace('#/login?next=' + encodeURIComponent('#/account')); return; }
-  const u = auth.user;
-  document.title = 'Account · CryptChain';
+  document.title = 'My workspace · CryptChain';
   main.innerHTML = `
-    <div class="card">
-      <div class="identity">${identicon(u.email, 52)}
-        <div class="grow"><div class="name">${esc(u.name)}</div><div class="muted">${esc(u.email)}
-          ${auth.mode === 'demo' ? ' <span class="chip pend">Demo account</span>' : ''}</div></div>
-        <button class="btn ghost" id="signout">Sign out</button></div>
+    <div class="page-head">
+      <div><h1 class="page-title">📋 My workspace</h1>
+        <p class="muted">Your alerts, watched wallets, labels and saved investigations. Everything is kept in this browser; nothing is uploaded.</p></div>
     </div>
     <div class="card">
       <div class="section-head"><h2>⚡ Flow alerts</h2><div class="row-gap">${notificationsButton()}<button class="btn ghost small-btn" id="markread">Mark all read</button></div></div>
@@ -88,7 +36,6 @@ export async function accountPage(stale) {
       <div id="inv-list"></div>
     </div>`;
 
-  document.getElementById('signout').onclick = async () => { await signOut(); toast('Signed out'); location.hash = '#/'; };
   document.getElementById('markread').onclick = () => { markAlertsRead(); renderAlerts(); window.dispatchEvent(new Event('alerts-changed')); };
   const renderAlerts = () => {
     const list = listAlerts();

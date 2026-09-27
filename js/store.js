@@ -1,5 +1,5 @@
 // Per-user data: watchlist, saved investigations, alert feed.
-// Supabase tables when configured (see supabase/schema.sql), otherwise localStorage keyed by user id.
+// Kept in the visitor's browser (localStorage).
 // The alert feed is always local: it is derived from public chain data and rebuilt by the monitor.
 import { auth } from './auth.js';
 
@@ -7,16 +7,13 @@ const lsKey = name => `cc_${name}_${auth.user ? auth.user.id : 'anon'}`;
 const lsGet = name => { try { return JSON.parse(localStorage.getItem(lsKey(name)) || '[]'); } catch { return []; } };
 const lsSet = (name, v) => { try { localStorage.setItem(lsKey(name), JSON.stringify(v)); } catch { /* storage full or blocked */ } };
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
-const sb = () => (auth.mode === 'supabase' && auth.user ? auth.client : null);
-const must = ({ data, error }) => { if (error) throw error; return data; };
 
-function requireUser() { if (!auth.user) throw new Error('Sign in first.'); }
+function requireUser() {}
 
 // ---------------------------------------------------------------- watchlist
 // item: { id, chain_id, address, label, created_at }
 export async function listWatch() {
   if (!auth.user) return [];
-  if (sb()) return must(await sb().from('watchlist').select('*').order('created_at', { ascending: false }));
   return lsGet('watch');
 }
 export async function addWatch(chainId, address, label = '') {
@@ -24,14 +21,12 @@ export async function addWatch(chainId, address, label = '') {
   const existing = (await listWatch()).find(w => w.chain_id === chainId && w.address.toLowerCase() === address.toLowerCase());
   if (existing) return existing;
   const row = { chain_id: chainId, address, label: label.slice(0, 80) };
-  if (sb()) return must(await sb().from('watchlist').insert({ ...row, user_id: auth.user.id }).select().single());
   const item = { id: uid(), ...row, created_at: new Date().toISOString() };
   lsSet('watch', [item, ...lsGet('watch')]);
   return item;
 }
 export async function removeWatch(id) {
   requireUser();
-  if (sb()) return must(await sb().from('watchlist').delete().eq('id', id));
   lsSet('watch', lsGet('watch').filter(w => w.id !== id));
 }
 export async function isWatched(chainId, address) {
@@ -42,20 +37,17 @@ export async function isWatched(chainId, address) {
 // item: { id, address, chain_ids[], params, summary, created_at }
 export async function listInvestigations() {
   if (!auth.user) return [];
-  if (sb()) return must(await sb().from('investigations').select('*').order('created_at', { ascending: false }).limit(50));
   return lsGet('inv');
 }
 export async function saveInvestigation({ address, chain_ids, params, summary }) {
   requireUser();
   const row = { address, chain_ids, params, summary };
-  if (sb()) return must(await sb().from('investigations').insert({ ...row, user_id: auth.user.id }).select().single());
   const item = { id: uid(), ...row, created_at: new Date().toISOString() };
   lsSet('inv', [item, ...lsGet('inv')].slice(0, 50));
   return item;
 }
 export async function removeInvestigation(id) {
   requireUser();
-  if (sb()) return must(await sb().from('investigations').delete().eq('id', id));
   lsSet('inv', lsGet('inv').filter(i => i.id !== id));
 }
 
@@ -63,7 +55,6 @@ export async function removeInvestigation(id) {
 // label: { id, chain_id, address, name, category, country, created_at }  (EVM labels use chain_id 'evm': all EVM networks)
 export async function listLabels() {
   if (!auth.user) return [];
-  if (sb()) return must(await sb().from('labels').select('*').order('created_at', { ascending: false }));
   return lsGet('labels');
 }
 export async function saveLabel({ chain_id, address, name, category = 'exchange', country = null }) {
@@ -72,17 +63,12 @@ export async function saveLabel({ chain_id, address, name, category = 'exchange'
   if (!name) throw new Error('Enter a name for this address.');
   const row = { chain_id, address, name, category, country };
   const existing = (await listLabels()).find(l => l.chain_id === chain_id && l.address.toLowerCase() === address.toLowerCase());
-  if (sb()) {
-    if (existing) return must(await sb().from('labels').update(row).eq('id', existing.id).select().single());
-    return must(await sb().from('labels').insert({ ...row, user_id: auth.user.id }).select().single());
-  }
   const item = { id: existing ? existing.id : uid(), ...row, created_at: new Date().toISOString() };
   lsSet('labels', [item, ...lsGet('labels').filter(l => l.id !== item.id)]);
   return item;
 }
 export async function removeLabel(id) {
   requireUser();
-  if (sb()) return must(await sb().from('labels').delete().eq('id', id));
   lsSet('labels', lsGet('labels').filter(l => l.id !== id));
 }
 

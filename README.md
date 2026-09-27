@@ -70,10 +70,9 @@ GitHub shows no explicit license for the Spellbook and DefiLlama repositories; c
   up live on WalletExplorer. Bitcoin Cash data now comes from Haskoin (keyless) with Blockchair as fallback.
 - **Dogecoin**: exchange wallets come from the exchanges' published reserve wallets (DefiLlama); there is no other free label source.
   Use **custom labels** instead.
-- **🏷 Custom labels** (signed-in users): name any address on any chain from its page (exchange, market maker, custodian, issuer,
+- **🏷 Custom labels**: name any address on any chain from its page (exchange, market maker, custodian, issuer,
   scam or other, plus location). Your labels win over all other sources and appear in alerts, connections, investigations and money
-  trails. EVM labels apply to every EVM network. Stored per user (Supabase table `labels` in `supabase/schema.sql`, or the browser
-  in demo mode); manage them under Account → My labels.
+  trails. EVM labels apply to every EVM network. Saved in your browser; manage them under My workspace → My labels.
 - **Automatic deposit-address detection on every address page**: the biggest unlabeled outgoing destinations are checked right away
   (does the address forward its funds into an exchange?), so a transfer to your personal exchange deposit address shows the exchange name.
 - **🔗 Exchange connections** card on every address page: which exchanges / institutions the wallet sent to or received from,
@@ -92,7 +91,7 @@ GitHub shows no explicit license for the Spellbook and DefiLlama repositories; c
 - Investigations show "Sent to Indian exchanges", a per-exchange chart, and 🇮🇳 India / ⚠ Exploiters filters.
 - TRON labels (much Indian USDT volume runs on TRON) need a free TronScan API key. Not included yet.
 
-### For signed-in users
+### Investigation, alerts and tracing (no sign-in needed)
 
 - **Live flow alerts**: every outgoing transaction is checked the moment it appears:
   - 🏦 **to an exchange**, via public exchange labels, or a **deposit address**, found by looking one hop ahead to see whether the address sweeps funds into an exchange hot wallet
@@ -126,22 +125,17 @@ GitHub shows no explicit license for the Spellbook and DefiLlama repositories; c
   - totals per asset, counterparties with labels, per-category in/out, timeline
   - cross-chain table of every bridge transfer in or out, including where it landed
   - scam checks: **address-poisoning lookalikes** and **fake tokens** (e.g. an ERC-20 pretending to be ETH)
-  - CSV export, save to account
+  - CSV export, save to My workspace
 - **Watchlist**: wallets checked every 30 s in the background, with an alert feed, a 🔔 unread badge and browser notifications
-- **Account**: saved investigations and watchlist
+- **My workspace**: watchlist, alert feed, custom labels and saved investigations, all kept in your browser
 
-### Sign-in setup
+### Interface
 
-Out of the box the site runs in **demo mode**: accounts live only in the visitor's browser and emails aren't
-verified. That's fine for testing, but not for launch. To use real accounts:
-
-1. Create a free project at supabase.com.
-2. In the SQL editor, run [`supabase/schema.sql`](supabase/schema.sql). It creates the `watchlist` and `investigations` tables with row-level security.
-3. Under Authentication → Providers, enable **Email** (magic link). Optionally enable **Google**.
-4. Under Authentication → URL Configuration, add your site URL, for example `https://yourname.github.io/cryptochain-explorer/`.
-5. Put the project URL and **anon** key in `js/config.js` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). Both are public by design.
-
-The blockchain data itself is public, so signing in gates *features*, not data.
+- **Sidebar** (Dashboard, Investigate, Exchanges, Indian exchanges, My workspace) with live network status; a bottom tab bar on phones
+- **Command palette**: press `Ctrl K` / `⌘ K` or `/` anywhere, paste a wallet or transaction, or type an exchange or page name.
+  It shows what the input is (e.g. "Address · 36 networks"), offers to investigate it, and lists recent searches
+- **Live price ticker** in the top bar, refreshed every minute
+- Dark and light themes follow the system setting
 
 ## Run locally
 
@@ -169,8 +163,10 @@ Because every visitor's browser calls the public APIs directly, rate limits appl
 ## Project layout
 
 ```
-index.html            page shell
-css/styles.css        styles (dark + light theme, responsive)
+index.html            app shell: sidebar, top bar, ticker, command palette
+css/styles.css        component styles
+css/theme.css         theme tokens, app shell and home page (dark + light, responsive)
+js/shell.js           navigation state, price ticker, command palette
 js/app.js             router and pages: dashboard, search, address, tx
 js/chains.js          chain registry (add networks here)
 js/detect.js          input → candidate chains
@@ -179,13 +175,12 @@ js/entities.js        who's behind an address: exchange / bridge / DEX labels (A
 js/alerts.js          transaction inspection: exchange deposits, deposit-address lookahead, bridge resolution
 js/crosschain.js      Across / LayerZero / Wormhole bridge indexers → normalized cross-chain transfers
 js/investigate.js     investigation engine: collect → classify → aggregate (+ scam checks, CSV)
-js/monitor.js         background watchlist monitor for signed-in users
-js/auth.js, store.js  sign-in (Supabase or demo) and per-user data
-js/pages/*.js         login/account and Investigate pages
+js/monitor.js         background watchlist monitor
+js/store.js           watchlist, labels, alerts and saved investigations (browser storage)
+js/pages/*.js         workspace, Investigate, exchanges and trace pages
 js/prices.js          CoinGecko prices (cached)
 js/live.js            polling for live views (pauses in background tabs)
-js/config.js          Supabase keys, optional Etherscan key, refresh intervals
-supabase/schema.sql   database tables + row-level security
+js/config.js          optional Etherscan key, refresh intervals
 ```
 
 ### Add a network
