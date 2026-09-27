@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CryptChain Explorer · Multichain block explorer</title>
+<meta name="description" content="Search any wallet address or transaction across Bitcoin, Ethereum, Solana, TRON, BNB Chain and 45+ blockchains. Live network stats, identities and transactions.">
+<meta name="theme-color" content="#0b0f17">
+<meta property="og:title" content="CryptChain Explorer">
+<meta property="og:description" content="One search box for 45+ blockchains: addresses, transactions and live network stats.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%235b8cff'/><path d='M9 12h6v8H9zM17 12h6v8h-6z' fill='none' stroke='white' stroke-width='2.5'/></svg>">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="home">
+<header class="top">
+  <div class="wrap top-inner">
+    <a class="logo" href="#/"><span class="logo-mark"></span><span class="logo-text">Crypt<span>Chain</span></span></a>
+    <form class="search small" role="search"><input name="q" placeholder="Search address, tx hash, or name" autocomplete="off" spellcheck="false" aria-label="Search"><button class="btn" aria-label="Search">⌕</button></form>
+    <a class="hdr-link small" href="#/exchanges/all" title="Exchanges & institutions worldwide">🌐 Exchanges</a>
+    <span class="muted small" id="net-count"></span>
+    <nav class="acct" id="acct" aria-label="Account"></nav>
+  </div>
+</header>
+
+<main class="wrap" id="main"></main>
+
+<footer class="wrap foot muted small">
+  <p>CryptChain shows public blockchain data only. "Identity" means public labels such as ENS names, contract names and tagged exchange wallets; blockchains don't record anyone's real name.</p>
+  <p>Data: Blockscout, mempool.space, Blockcypher, Blockchair, Routescan, public RPC nodes (PublicNode, BNB Chain), TronGrid, XRPL Cluster, Toncenter, NearBlocks, Aptos Labs, CoinGecko.</p>
+</footer>
+
+<noscript><p class="wrap">CryptChain needs JavaScript enabled.</p></noscript>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
