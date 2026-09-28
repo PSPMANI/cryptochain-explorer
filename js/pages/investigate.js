@@ -1,8 +1,4 @@
-// Investigate page: the signed-in workflow
-//   1 Target → 2 Collect → 3 Classify → 4 Money flow → 5 Cross-chain → 6 Report
-// Route: #/investigate/<chainIds comma-separated>/<address>?depth=500&run=1
 import { CHAIN, CHAINS } from '../chains.js';
-import { auth } from '../auth.js';
 import { ETHERSCAN_API_KEY } from '../config.js';
 import { main, adapter, withTimeout, pool, toast, download } from '../core.js';
 import { collect, analyze, toCSV } from '../investigate.js';
@@ -11,7 +7,7 @@ import { depositCheck, entityBadge } from '../alerts.js';
 import { known, CATEGORY_LABEL } from '../entities.js';
 import { getPrices } from '../prices.js';
 import { saveInvestigation, addWatch } from '../store.js';
-import { esc, short, amount, usd, compact, identicon, chainDot, link, timeCell, dirChip, stat } from '../ui.js';
+import { esc, short, amount, usd, compact, identicon, chainDot, link, timeCell, dirChip } from '../ui.js';
 import { chainLabel } from './shared.js';
 import { prefetchLabels, hasLiveLabels } from '../labels-live.js';
 import { mountTrace } from './tracegraph.js';
@@ -23,7 +19,6 @@ const STEPS = ['Target', 'Collect', 'Classify', 'Money flow', 'Cross-chain', 'Re
 const DEPTHS = [250, 500, 1000, 2500];
 const CAT_COLOR = { exchange: 'var(--cat-exchange)', bridge: 'var(--cat-bridge)', dex: 'var(--cat-dex)', exploit: 'var(--cat-exploit)', other: 'var(--cat-other)', unlabeled: 'var(--cat-none)' };
 
-// Chains where we can pull full history for an address
 const hasHistory = c => c.adapter !== 'evmrpc' || c.historyApi || ETHERSCAN_API_KEY;
 
 export async function investigatePage(chainsParam, address, params, stale) {
@@ -50,8 +45,6 @@ export async function investigatePage(chainsParam, address, params, stale) {
     <div id="report"></div>`;
   setStep(0);
 
-  // Step 1: which chains? EVM addresses are shared by every EVM chain, so scan them for activity.
-  // Options appear as each network answers; the requested chain(s) are listed and checked immediately.
   const pick = document.getElementById('chain-pick');
   const runBtn = document.getElementById('run');
   const autoRun = params.get('run') === '1';
@@ -77,7 +70,6 @@ export async function investigatePage(chainsParam, address, params, stale) {
     const n = info.name || (known(c, address) || {}).label;
     if (n && !named) { named = n; document.getElementById('inv-name').textContent = n; }
   };
-  // Requested chains: fill in their balances
   requested.forEach(async id => {
     const info = await withTimeout((await adapter(id)).getAddress(address), 15000).catch(() => null);
     if (stale() || !info) return;
@@ -97,7 +89,7 @@ export async function investigatePage(chainsParam, address, params, stale) {
         setName(c, info);
         foundOthers++;
         pick.querySelector('.scan-note').insertAdjacentHTML('beforebegin', opt(c, info));
-      } catch { /* not on this chain */ }
+      } catch { }
     });
     if (stale()) return;
     pick.querySelector('.scan-note').innerHTML = `${foundOthers ? `Also active on ${foundOthers} other network${foundOthers > 1 ? 's' : ''}; tick them to include.` : 'Not active on other EVM networks with history support.'}
@@ -123,7 +115,6 @@ async function run(chainIds, address, depth, name, stale) {
       <div class="bar"><div style="width:0%"></div></div><span class="muted small prog-txt">waiting…</span></div>`).join('')}
     <div class="prog-row">🌉<span class="prog-name">Bridges</span><div class="bar"><div class="indet"></div></div><span class="muted small" id="prog-bridge">Across · LayerZero · Wormhole…</span></div></div>`;
 
-  // Step 2: collect (per-chain) + cross-chain in parallel
   const bridgesP = bridgeActivity(address, 50).catch(() => []).then(b => {
     const el = document.getElementById('prog-bridge');
     if (el) { el.textContent = `${b.length} bridge transfer${b.length === 1 ? '' : 's'}`; el.previousElementSibling.firstElementChild.className = 'full'; }
@@ -147,7 +138,6 @@ async function run(chainIds, address, depth, name, stale) {
   });
   if (stale()) return;
 
-  // Step 3–4: classify + aggregate (Bitcoin / TRON: look up exchange tags of the biggest counterparties first)
   setStep(2);
   for (const id of chainIds.filter(hasLiveLabels)) {
     const byValue = items.filter(t => t.chainId === id).sort((a, b) => (b.value || 0) - (a.value || 0));
@@ -167,7 +157,6 @@ async function run(chainIds, address, depth, name, stale) {
   report.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ---------------------------------------------------------------- report
 function renderReport(el, m, ctx, stale) {
   const t = m.totals;
   const cats = m.categories;
@@ -282,7 +271,6 @@ function renderReport(el, m, ctx, stale) {
   bindCharts(el);
   const finalApi = mountFinalDestinations(el.querySelector('#final-mount'), m, ctx, stale);
 
-  // ---- Report downloads
   const site = location.origin + location.pathname;
   const stamp = new Date().toISOString().slice(0, 10);
   const base = `cryptchain-report-${short(ctx.address, 4).replace('…', '-')}-${stamp}`;
@@ -311,7 +299,6 @@ function renderReport(el, m, ctx, stale) {
     prices: ctx.prices, model: m, bridges: ctx.bridges, stale,
   });
 
-  // Section nav: smooth scroll + highlight the section in view
   const nav = el.querySelector('.rep-nav');
   nav.addEventListener('click', e => {
     const b = e.target.closest('[data-sec]');
@@ -323,7 +310,6 @@ function renderReport(el, m, ctx, stale) {
   }, { rootMargin: '-120px 0px -60% 0px' });
   el.querySelectorAll('section[id^="sec-"]').forEach(s => io.observe(s));
 
-  // Counterparties with filter + deposit-address check
   let cpFilter = 'all', cpShown = 25;
   const cpMatch = c => cpFilter === 'all' || (cpFilter === 'unlabeled' ? !c.entity : cpFilter === 'india' ? c.entity && c.entity.country === 'IN' : c.entity && c.entity.category === cpFilter);
   const renderCps = () => {
@@ -355,8 +341,6 @@ function renderReport(el, m, ctx, stale) {
   });
   renderCps();
 
-  // Automatic exchange verification: the biggest unlabeled destinations are checked without clicking.
-  // (Does each one forward its funds into a labeled exchange wallet, i.e. is it a deposit address?)
   const autoTargets = m.counterparties.filter(c => !c.entity && !c.poison && c.nOut && CHAIN[c.chainId].family !== 'utxo')
     .sort((a, b) => b.outUsd - a.outUsd).slice(0, 12);
   autoTargets.forEach(c => { c.checking = true; });
@@ -367,10 +351,8 @@ function renderReport(el, m, ctx, stale) {
     if (dep) c.entity = dep;
     if (!stale()) renderCps();
   });
-  // Bridge recipients on the other chain: check them automatically too
   setTimeout(() => { if (!stale()) el.querySelectorAll('[data-dcheck]').forEach((b, i) => { if (i < 8) b.click(); }); }, 500);
 
-  // Transfers ledger with filters
   let txShown = 100;
   const renderTxs = () => {
     const dir = document.getElementById('f-dir').value, cat = document.getElementById('f-cat').value, q = document.getElementById('f-q').value.trim().toLowerCase();
@@ -391,7 +373,6 @@ function renderReport(el, m, ctx, stale) {
   document.getElementById('f-q').oninput = () => { txShown = 100; renderTxs(); };
   renderTxs();
 
-  // Actions
   document.getElementById('csv').onclick = () => download(`cryptchain-${short(ctx.address, 4).replace('…', '-')}-${new Date().toISOString().slice(0, 10)}.csv`, toCSV(m.rows));
   document.getElementById('save').onclick = async () => {
     try {
@@ -425,7 +406,6 @@ function bridgeTable(ctx) {
     }).join('')}</tbody></table></div>`;
 }
 
-// Deposit-address checks on bridge recipients (delegated listener, survives re-renders)
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-dcheck]');
   if (!b) return;
@@ -435,7 +415,6 @@ document.addEventListener('click', async e => {
   b.outerHTML = dep ? entityBadge(dep) : '<span class="muted small">Not an exchange</span>';
 });
 
-// ---------------------------------------------------------------- charts (inline SVG)
 function flowSVG(m, ctx) {
   const useUsd = m.totals.inUsd + m.totals.outUsd > 0;
   const N = 7;
@@ -451,7 +430,6 @@ function flowSVG(m, ctx) {
   if (!L.length && !R.length) return '<p class="muted">No value moved in the collected history.</p>';
   const W = 960, gap = 10, top = 16;
   const H = Math.max(280, Math.max(L.length, R.length) * 52 + top * 2);
-  // Value-proportional height budget, leaving room for the minimum label slots of small nodes
   const avail = Math.max(80, H - top * 2 - gap * Math.max(L.length, R.length) - 32 * Math.max(0, Math.max(L.length, R.length) - 2));
   const sumL = L.reduce((s, n) => s + n.val, 0), sumR = R.reduce((s, n) => s + n.val, 0);
   const scale = avail / Math.max(sumL, sumR, 1e-9);
@@ -459,7 +437,6 @@ function flowSVG(m, ctx) {
   const cx0 = 455, cx1 = 505, lx = 215, rx = 745;
   const cH = Math.max(sumL, sumR) * scale, cy = (H - cH) / 2;
 
-  // Each node gets at least a label's height of vertical space so small flows stay readable
   const SLOT = 32;
   const place = (nodes) => {
     const total = nodes.reduce((s, n) => s + Math.max(SLOT, n.val * scale) + gap, 0);
@@ -497,7 +474,6 @@ function flowSVG(m, ctx) {
   </svg>`;
 }
 
-// Daily buckets, or weekly when the range is long
 function volumeBuckets(days) {
   if (days.length <= 120) return { buckets: days, unit: 'day' };
   const wk = new Map();
@@ -511,10 +487,6 @@ function volumeBuckets(days) {
   return { buckets: [...wk.values()].sort((a, b) => a.day.localeCompare(b.day)), unit: 'week' };
 }
 
-/**
- * Native-coin balance over time on the main chain, walked backwards from today's balance:
- * before each transfer the balance was (after − received) or (after + sent + fee).
- */
 function balanceSeries(rows, ctx) {
   const chainId = ctx.chainIds[0], chain = CHAIN[chainId];
   const info = ctx.infos && ctx.infos[chainId];
@@ -525,7 +497,7 @@ function balanceSeries(rows, ctx) {
   for (const r of native) {
     pts.push({ t: r.time, v: bal });
     bal = r.direction === 'in' ? bal - r.value : bal + r.value + (r.fee || 0);
-    if (bal < 0) bal = 0; // history window may start mid-way; never draw a negative balance
+    if (bal < 0) bal = 0;
   }
   pts.push({ t: native[native.length - 1].time - 1, v: bal });
   return { chainId, symbol: chain.symbol, points: pts.reverse() };

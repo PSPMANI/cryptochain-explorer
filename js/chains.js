@@ -1,10 +1,3 @@
-// Chain registry. To add a chain, add an entry here; `adapter` picks the module in js/adapters/.
-//
-// adapter types:
-//   blockscout  – full EVM indexer (history, ENS, public labels, tokens)        api = origin
-//   evmrpc      – plain JSON-RPC (balance + tx lookup); history from `historyApi` (Etherscan-compatible)
-//                 or from Etherscan V2 when ETHERSCAN_API_KEY is set in config.js
-//   esplora, blockcypher, blockchair, solana, tron, xrp, ton, near, aptos, sui, cosmos
 
 const bs = (id, name, host, symbol, cg, color, extra = {}) =>
   ({ id, name, family: 'evm', adapter: 'blockscout', api: `https://${host}`, symbol, decimals: 18, coingeckoId: cg, color, ...extra });
@@ -12,7 +5,6 @@ const rpcChain = (id, name, host, symbol, cg, color, chainId, extra = {}) =>
   ({ id, name, family: 'evm', adapter: 'evmrpc', api: `https://${host}`, symbol, decimals: 18, coingeckoId: cg, color, chainId, ...extra });
 
 export const CHAINS = [
-  // ---- EVM with full indexer (Blockscout) ----
   bs('ethereum', 'Ethereum', 'eth.blockscout.com', 'ETH', 'ethereum', '#627EEA', { ens: true, chainId: 1 }),
   bs('base', 'Base', 'base.blockscout.com', 'ETH', 'ethereum', '#0052FF', { chainId: 8453 }),
   bs('arbitrum', 'Arbitrum One', 'arbitrum.blockscout.com', 'ETH', 'ethereum', '#28A0F0', { chainId: 42161 }),
@@ -30,15 +22,11 @@ export const CHAINS = [
   bs('immutable', 'Immutable zkEVM', 'explorer.immutable.com', 'IMX', 'immutable-x', '#17B5CB', { chainId: 13371 }),
   bs('rootstock', 'Rootstock', 'rootstock.blockscout.com', 'RBTC', 'rootstock', '#FF9931', { chainId: 30 }),
   bs('flare', 'Flare', 'flare-explorer.flare.network', 'FLR', 'flare-networks', '#E62058', { chainId: 14 }),
-  bs('gnosis', 'Gnosis', 'gnosis.blockscout.com', 'xDAI', 'xdai', '#3E6957', { chainId: 100 }),
-  bs('scroll', 'Scroll', 'scroll.blockscout.com', 'ETH', 'ethereum', '#FFEEDA', { chainId: 534352 }),
   bs('lukso', 'LUKSO', 'explorer.execution.mainnet.lukso.network', 'LYX', 'lukso-token-2', '#FE005B', { chainId: 42 }),
 
-  // ---- EVM, public RPC + Etherscan-compatible history (Routescan, no key needed) ----
   rpcChain('avalanche', 'Avalanche C-Chain', 'avalanche-c-chain-rpc.publicnode.com', 'AVAX', 'avalanche-2', '#E84142', 43114,
     { historyApi: 'https://api.routescan.io/v2/network/mainnet/evm/43114/etherscan/api' }),
 
-  // ---- EVM, public RPC only ----
   rpcChain('bsc', 'BNB Smart Chain', 'bsc-dataseed.bnbchain.org', 'BNB', 'binancecoin', '#F0B90B', 56, { logsRpc: 'https://bsc-rpc.publicnode.com', logsSpan: 3000 }),
   rpcChain('opbnb', 'opBNB', 'opbnb-rpc.publicnode.com', 'BNB', 'binancecoin', '#F0B90B', 204),
   rpcChain('linea', 'Linea', 'linea-rpc.publicnode.com', 'ETH', 'ethereum', '#61DFFF', 59144, { logsRpc: 'https://rpc.linea.build' }),
@@ -52,9 +40,10 @@ export const CHAINS = [
   rpcChain('sei', 'Sei EVM', 'sei-evm-rpc.publicnode.com', 'SEI', 'sei-network', '#9E1F19', 1329),
   rpcChain('metis', 'Metis', 'metis-rpc.publicnode.com', 'METIS', 'metis-token', '#00DACC', 1088, { historyApi: 'https://api.routescan.io/v2/network/mainnet/evm/1088/etherscan/api' }),
   rpcChain('taiko', 'Taiko', 'taiko-rpc.publicnode.com', 'ETH', 'ethereum', '#E81899', 167000),
+  rpcChain('gnosis', 'Gnosis', 'gnosis-rpc.publicnode.com', 'xDAI', 'xdai', '#3E6957', 100),
+  rpcChain('scroll', 'Scroll', 'scroll-rpc.publicnode.com', 'ETH', 'ethereum', '#FFEEDA', 534352),
   rpcChain('kava', 'Kava EVM', 'kava-evm-rpc.publicnode.com', 'KAVA', 'kava', '#FF433E', 2222),
 
-  // ---- UTXO ----
   { id: 'bitcoin', name: 'Bitcoin', family: 'utxo', adapter: 'esplora', api: 'https://mempool.space/api',
     symbol: 'BTC', decimals: 8, coingeckoId: 'bitcoin', color: '#F7931A' },
   { id: 'litecoin', name: 'Litecoin', family: 'utxo', adapter: 'blockcypher', api: 'https://api.blockcypher.com/v1/ltc/main',
@@ -67,7 +56,6 @@ export const CHAINS = [
     symbol: 'BCH', decimals: 8, coingeckoId: 'bitcoin-cash', color: '#8DC351', statsEvery: 30000,
     fallback: { adapter: 'blockchair', api: 'https://api.blockchair.com/bitcoin-cash' } },
 
-  // ---- Other L1s ----
   { id: 'solana', name: 'Solana', family: 'solana', adapter: 'solana', api: 'https://solana-rpc.publicnode.com',
     symbol: 'SOL', decimals: 9, coingeckoId: 'solana', color: '#14F195' },
   { id: 'tron', name: 'TRON', family: 'tron', adapter: 'tron', api: 'https://api.trongrid.io',
@@ -85,7 +73,6 @@ export const CHAINS = [
   { id: 'cosmos', name: 'Cosmos Hub', family: 'cosmos', adapter: 'cosmos', api: 'https://cosmos-rest.publicnode.com',
     symbol: 'ATOM', decimals: 6, coingeckoId: 'cosmos', color: '#8A8FB5' },
 
-  // ---- Testnets ----
   bs('sepolia', 'Sepolia (testnet)', 'eth-sepolia.blockscout.com', 'ETH', null, '#9CA3AF', { testnet: true, chainId: 11155111 }),
 ];
 

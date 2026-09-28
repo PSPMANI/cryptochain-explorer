@@ -1,5 +1,3 @@
-// TON adapter (toncenter API v3). Unauthenticated toncenter allows ~1 request/second,
-// so every call goes through a sequential throttle and 429s are retried with backoff.
 
 import { fetchJSON, fromUnits, toMs, NotFound, sleep } from '../utils.js';
 
@@ -11,7 +9,6 @@ const B64_HASH_RE = /^[A-Za-z0-9_\-+/]{43}=?$/;
 const nano = v => fromUnits(v || 0, 9);
 const short = a => (a ? `${a.slice(0, 5)}…${a.slice(-4)}` : '');
 
-// ---- encoding helpers ----
 
 const b64ToHex = s => {
   const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(44, '='));
@@ -27,7 +24,6 @@ function crc16(bytes) {
   return crc;
 }
 
-/** Raw "wc:hex" -> user-friendly base64url (bounceable EQ... by default, UQ... if !bounceable). */
 function rawToFriendly(raw, bounceable = true) {
   if (!raw || !RAW_RE.test(raw)) return raw || null;
   const [wc, hex] = raw.split(':');
@@ -40,10 +36,8 @@ function rawToFriendly(raw, bounceable = true) {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_');
 }
 
-/** addr_std object from a decoded message body -> raw form. */
 const addrStd = a => (a && a.address ? `${a.workchain_id ?? 0}:${a.address}` : null);
 
-// ---- HTTP with throttle ----
 
 let queue = Promise.resolve();
 let lastCall = 0;
@@ -65,7 +59,6 @@ function tc(chain, path) {
       }
     }
   };
-  // Serialize all toncenter calls from this module.
   const p = queue.then(run, run);
   queue = p.catch(() => {});
   return p;
@@ -77,17 +70,15 @@ function checkAddress(address) {
   return a;
 }
 
-/** Normalize a tx hash (hex, base64 or base64url) to lowercase hex. */
 function hashToHex(hash) {
   const h = String(hash || '').trim();
   if (HEX_HASH_RE.test(h)) return h.replace(/^0x/, '').toLowerCase();
   if (B64_HASH_RE.test(h)) {
-    try { const hex = b64ToHex(h); if (hex.length === 64) return hex; } catch { /* fall through */ }
+    try { const hex = b64ToHex(h); if (hex.length === 64) return hex; } catch { }
   }
   throw new NotFound('Not a TON transaction hash');
 }
 
-// ---- tx mapping ----
 
 function friendly(book, raw) {
   if (!raw) return null;
@@ -110,16 +101,11 @@ function txStatus(tx) {
   if (tx.emulated) return 'pending';
   const d = tx.description || {};
   const compute = d.compute_ph || {};
-  // A skipped compute phase (e.g. plain transfer to an uninit wallet) still credits the value.
   if (!compute.skipped && compute.success === false) return 'failed';
   if (d.action_ph && d.action_ph.success === false) return 'failed';
   return 'success';
 }
 
-/**
- * Summarize a tx relative to its own account. If the inbound message is external (wallet signing),
- * it's an outgoing tx whose value is the sum of outbound messages; otherwise it's incoming.
- */
 function summarize(tx, book) {
   const me = friendly(book, tx.account);
   const inMsg = tx.in_msg || null;
@@ -151,7 +137,6 @@ export default function create(chain) {
     const canonical = entry.user_friendly;
     const ifaces = entry.interfaces || [];
 
-    // Wallet info gives type/seqno; non-wallet contracts answer 409 "not a wallet" -> use /account.
     let info;
     const isWalletLike = !ifaces.length || ifaces.some(i => /^wallet/.test(i));
     if (isWalletLike) info = await tc(chain, `/walletInformation?address=${encodeURIComponent(canonical)}&use_v2=false`).catch(() => null);
@@ -176,7 +161,6 @@ export default function create(chain) {
     if (info.seqno != null) stats.push({ label: 'Seqno', value: String(info.seqno) });
     if (ifaces.length) stats.push({ label: 'Interfaces', value: ifaces.join(', ') });
 
-    // Jetton balances (one call; metadata comes along in the same response).
     let tokens = [];
     if (!neverUsed && kind !== 'Jetton Wallet') {
       try {
@@ -195,7 +179,7 @@ export default function create(chain) {
         }).filter(t => t.balance > 0)
           .sort((x, y) => x._scam - y._scam)
           .map(({ _scam, ...t }) => t);
-      } catch { /* jettons are optional */ }
+      } catch { }
     }
 
     return {
@@ -211,7 +195,6 @@ export default function create(chain) {
     };
   }
 
-  /** Cursor is the logical time (lt) just below the last item returned, so pages stay stable. */
   async function getTxs(address, cursor = null) {
     const a = checkAddress(address);
     const qs = `account=${encodeURIComponent(a)}&limit=20&sort=desc${cursor ? `&end_lt=${encodeURIComponent(cursor)}` : ''}`;
@@ -244,7 +227,6 @@ export default function create(chain) {
     let r = await tc(chain, `/transactions?hash=${hex}&limit=1`);
     let tx = r?.transactions?.[0];
     if (!tx) {
-      // Maybe it's a message hash (what many wallets show): find the tx that received it.
       r = await tc(chain, `/transactionsByMessage?msg_hash=${hex}&direction=in&limit=1`).catch(() => null);
       tx = r?.transactions?.[0];
     }
@@ -259,13 +241,11 @@ export default function create(chain) {
       ? s.outs.map(m => ({ address: friendly(book, m.destination), name: book[m.destination]?.domain || null, value: nano(m.value), note: comment(m) }))
       : [{ address: s.me, name: book[tx.account]?.domain || null, value: s.value, note: s.note }];
 
-    // Jetton movements from decoded bodies. Symbol/decimals need one lookup of the jetton wallet involved.
     const transfers = [];
     const jettonMsgs = [s.inMsg, ...s.outs].filter(m => /^jetton_(notify|transfer)$/.test(m?.message_content?.decoded?.['@type'] || ''));
     for (const m of jettonMsgs.slice(0, 2)) {
       const d = m.message_content.decoded;
       const notify = d['@type'] === 'jetton_notify';
-      // notify: source = receiver's jetton wallet; transfer: destination = sender's jetton wallet.
       const jw = notify ? m.source : m.destination;
       let symbol = 'Jetton', decimals = 9;
       try {
@@ -273,7 +253,7 @@ export default function create(chain) {
         const master = j?.jetton_wallets?.[0]?.jetton;
         const info = (j?.metadata?.[master]?.token_info || []).find(t => t.type === 'jetton_masters');
         if (info) { symbol = info.symbol || symbol; decimals = Number(info.extra?.decimals ?? 9); }
-      } catch { /* keep defaults */ }
+      } catch { }
       const other = friendly(book, addrStd(notify ? d.sender : d.destination));
       transfers.push({
         from: notify ? other : s.me,

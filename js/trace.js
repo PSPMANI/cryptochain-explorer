@@ -1,12 +1,3 @@
-// Follow-the-money trace engine (DOM-free).
-// Builds a layered graph: hop 0 = the investigated wallet, hop 1 = its destinations (or sources),
-// hop 2 = their destinations, … Money is followed through ordinary wallets and across bridges;
-// exchanges are terminal ("money exits here"), DEXs / tokens / contracts are terminal too.
-//
-//   node: { id, chainId, address, label, entity, hop, kind, terminal, status, reason }
-//         kind: 'root' | 'wallet' | 'exchange' | 'bridge' | 'dex' | 'contract' | 'more'
-//         status: 'idle' | 'loading' | 'done' | 'error'
-//   edge: { id, from, to, usd, count, amounts: { SYMBOL: n }, first, last, txs: [{ hash, time, amount, symbol, usd, chainId }], cross }
 import { CHAIN } from './chains.js';
 import { adapter, withTimeout } from './core.js';
 import { analyze, suspiciousToken } from './investigate.js';
@@ -20,10 +11,6 @@ const kindOf = ent => !ent ? 'wallet'
   : ent.category === 'dex' ? 'dex' : ent.category === 'token' || ent.category === 'burn' || ent.category === 'staking' ? 'contract' : 'wallet';
 
 export class Trace {
-  /**
-   * @param root    { chainId, address, label }
-   * @param opts    { direction: 'out' | 'in', prices, perNode = 5, maxNodes = 70, minUsd = 0 }
-   */
   constructor(root, { direction = 'out', prices = {}, perNode = 5, maxNodes = 70, minUsd = 0 } = {}) {
     this.direction = direction;
     this.prices = prices;
@@ -55,7 +42,7 @@ export class Trace {
   }
 
   addEdge(fromId, toId, tx, cross = null) {
-    const [a, b] = this.direction === 'out' ? [fromId, toId] : [toId, fromId]; // edges always point along money flow
+    const [a, b] = this.direction === 'out' ? [fromId, toId] : [toId, fromId];
     const id = `${a}>${b}`;
     let e = this.edges.get(id);
     if (!e) { e = { id, from: a, to: b, usd: 0, count: 0, amounts: {}, first: null, last: null, txs: [], cross }; this.edges.set(id, e); }
@@ -70,7 +57,6 @@ export class Trace {
     return { edge: e, added: true };
   }
 
-  /** Counterparty groups from an analysis model, in trace direction, strongest first. */
   groups(model) {
     const list = this.direction === 'out' ? model.destinations : model.sources;
     const val = c => this.direction === 'out' ? c.outUsd : c.inUsd;
@@ -79,10 +65,8 @@ export class Trace {
       .sort((x, y) => (val(y) - val(x)) || (cnt(y) - cnt(x)));
   }
 
-  /** Attach children to `parent` from classified rows (analysis model of the parent wallet). */
   attach(parent, model, { live = false } = {}) {
     const dir = this.direction;
-    // Fake / spam tokens are not money: keep them out of the trail entirely
     const legit = r => !suspiciousToken(r);
     const hasLegit = new Set(model.rows.filter(r => r.direction === dir && legit(r)).map(r => `${r.chainId}:${r.counterparty.toLowerCase()}`));
     const groups = this.groups(model).filter(g => hasLegit.has(`${g.chainId}:${g.address.toLowerCase()}`));
@@ -91,7 +75,6 @@ export class Trace {
     const added = [];
     for (const g of shown) {
       let kind = kindOf(g.entity);
-      // A plain name that isn't a name-service domain is a contract name (Aave gateway, vaults, …): stop there
       if (kind === 'wallet' && g.name && !/\.(eth|ton|near|sol|base\.eth)$/i.test(g.name)) kind = 'contract';
       const child = this.addNode({
         id: nodeId(g.chainId, g.address), chainId: g.chainId, address: g.address,
@@ -119,7 +102,6 @@ export class Trace {
     return added;
   }
 
-  /** Bridge transfers of the root wallet (from crosschain.bridgeActivity) → bridge node → recipient on the other chain. */
   attachBridges(bridges) {
     const root = this.nodes.get(this.rootId);
     for (const b of bridges.filter(x => x.direction === this.direction)) {
@@ -138,14 +120,12 @@ export class Trace {
           this.addEdge(bridgeNode.id, dest.id, { ...tx, hash: b.dstTx || b.srcTx, chainId: CHAIN[b.dstChain] ? b.dstChain : null }, b);
         }
       } else if (other && CHAIN[otherChain]) {
-        // Bridged to the same address on the other chain: continue from there
         const same = this.addNode({ id: nodeId(otherChain, other), chainId: otherChain, address: other, label: `Same wallet on ${CHAIN[otherChain].name}`, entity: null, hop: 2, kind: 'wallet', terminal: false, status: 'idle' });
         if (same) this.addEdge(bridgeNode.id, same.id, { ...tx, hash: b.dstTx || b.srcTx, chainId: CHAIN[b.dstChain] ? b.dstChain : null }, b);
       }
     }
   }
 
-  /** Fetch a wallet node's recent history and attach its counterparties. */
   async expand(id, { live = false } = {}) {
     const node = this.nodes.get(id);
     if (!node || !node.address || node.kind === 'more' || (node.terminal && node.kind !== 'bridge') || node.status === 'loading') return [];
@@ -173,7 +153,6 @@ export class Trace {
     }
   }
 
-  /** A bridge contract reached at hop ≥ 1: resolve each tx's destination through the bridge indexers. */
   async expandBridge(node) {
     const incoming = [...this.edges.values()].filter(e => e.to === node.id && !e.aggregate);
     if (!incoming.length || node.status === 'loading') return [];
@@ -202,7 +181,6 @@ export class Trace {
     return added;
   }
 
-  /** Breadth-first auto-expansion up to `depth` hops. */
   async expandTo(depth, shouldStop = () => false, concurrency = 3) {
     for (let hop = 1; hop < depth; hop++) {
       const frontier = [...this.nodes.values()].filter(n => n.hop === hop && !n.expanded && (n.kind === 'wallet' || n.kind === 'bridge') && n.status === 'idle');
@@ -214,14 +192,12 @@ export class Trace {
     }
   }
 
-  /** Every individual transfer in the graph, oldest first: the playback timeline. */
   events() {
     const out = [];
     for (const e of this.edges.values()) for (const t of e.txs) out.push({ edge: e, tx: t, time: t.time || 0 });
     return out.sort((x, y) => x.time - y.time);
   }
 
-  /** Layered layout: x by hop, y stacked within each hop following parent order. */
   layout({ colW = 270, rowH = 64, nodeW = 190, nodeH = 46, include = null } = {}) {
     const byHop = new Map();
     for (const n of this.nodes.values()) {
@@ -246,7 +222,6 @@ export class Trace {
       maxRows = Math.max(maxRows, col.length);
       col.forEach((n, i) => pos.set(n.id, { x: (h - hops[0]) * colW, y: i * rowH, w: nodeW, h: nodeH, col: h }));
     }
-    // center each column vertically
     const H = maxRows * rowH;
     for (const h of hops) {
       const col = byHop.get(h);

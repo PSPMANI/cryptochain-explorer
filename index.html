@@ -6,6 +6,7 @@
 <title>CryptChain Explorer · Multichain block explorer</title>
 <meta name="description" content="Search any wallet, transaction or exchange across 48 blockchains. Live network stats, exchange identification, money tracing and investigation reports.">
 <meta name="theme-color" content="#070b14">
+<meta name="author" content="Manikanta">
 <meta property="og:title" content="CryptChain Explorer">
 <meta property="og:description" content="One search for 48 blockchains: wallets, transactions, exchanges, live alerts and money tracing.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%236366f1'/><stop offset='1' stop-color='%2322d3ee'/></linearGradient></defs><rect width='32' height='32' rx='9' fill='url(%23g)'/><path d='M9 12h6v8H9zM17 12h6v8h-6z' fill='none' stroke='white' stroke-width='2.5'/></svg>">
@@ -14,10 +15,30 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="css/styles.css">
 <link rel="stylesheet" href="css/theme.css">
+<link rel="modulepreload" href="js/app.js">
+<link rel="modulepreload" href="js/chains.js">
+<link rel="modulepreload" href="js/detect.js">
+<link rel="modulepreload" href="js/prices.js">
+<link rel="modulepreload" href="js/utils.js">
+<link rel="modulepreload" href="js/entities.js">
+<link rel="modulepreload" href="js/data/entity-directory.js">
+<link rel="modulepreload" href="js/labels-live.js">
+<link rel="modulepreload" href="js/cashaddr.js">
+<link rel="modulepreload" href="js/live.js">
+<link rel="modulepreload" href="js/config.js">
+<link rel="modulepreload" href="js/core.js">
+<link rel="modulepreload" href="js/ui.js">
+<link rel="modulepreload" href="js/store.js">
+<link rel="modulepreload" href="js/alerts.js">
+<link rel="modulepreload" href="js/crosschain.js">
+<link rel="modulepreload" href="js/monitor.js">
+<link rel="modulepreload" href="js/shell.js">
+<link rel="modulepreload" href="js/pages/xfers.js">
+<link rel="modulepreload" href="js/pages/shared.js">
+<link rel="modulepreload" href="js/investigate.js">
 </head>
 <body class="home">
 
-<!-- ============ Sidebar (desktop) ============ -->
 <aside class="sidebar" aria-label="Main navigation">
   <a class="logo" href="#/"><span class="logo-mark"></span><span class="logo-text">Crypt<span>Chain</span></span></a>
   <nav class="side-nav">
@@ -29,11 +50,11 @@
   </nav>
   <div class="side-foot">
     <div class="side-stat"><span class="pulse"></span><span id="net-count">Connecting…</span></div>
-    <div class="side-note">Public blockchain data only · no sign-in · nothing uploaded</div>
+    <div class="side-note">Public blockchain data only · your searches stay on your device</div>
+    <div class="side-note credit">Created by <b>Manikanta</b></div>
   </div>
 </aside>
 
-<!-- ============ Main column ============ -->
 <div class="shell">
   <header class="topbar">
     <button class="cmdk-trigger" id="cmdk-open" aria-label="Search (Ctrl+K)">
@@ -41,7 +62,6 @@
       <span class="cmdk-placeholder">Search wallet, transaction, exchange or name…</span>
       <kbd>Ctrl K</kbd>
     </button>
-    <!-- plain search form kept for pages that fill / read the query -->
     <form class="search small visually-hidden" role="search" aria-hidden="true" tabindex="-1"><input name="q" tabindex="-1" autocomplete="off"></form>
     <nav class="acct" id="acct" aria-label="Workspace"></nav>
   </header>
@@ -50,12 +70,12 @@
   <main class="wrap" id="main"></main>
 
   <footer class="wrap foot muted small">
+    <p class="credit">© 2026 CryptChain Explorer · Created by <b>Manikanta</b></p>
     <p>CryptChain shows public blockchain data only. "Identity" means public labels such as ENS names, contract names and tagged exchange wallets; blockchains don't record anyone's real name.</p>
     <p>Data: Blockscout, mempool.space, Blockcypher, Haskoin, Blockchair, Routescan, public RPC nodes, TronGrid, TronScan, XRPL Cluster, XRPScan, Toncenter, TonAPI, NearBlocks, Aptos Labs, WalletExplorer, DefiLlama, Dune Spellbook, CoinGecko.</p>
   </footer>
 </div>
 
-<!-- ============ Bottom navigation (phones) ============ -->
 <nav class="bottomnav" aria-label="Navigation">
   <a href="#/" data-nav="home"><span>◈</span>Home</a>
   <a href="#" data-cmdk><span>⌕</span>Search</a>
@@ -63,7 +83,6 @@
   <a href="#/account" data-nav="account"><span>▤</span>Workspace</a>
 </nav>
 
-<!-- ============ Command palette ============ -->
 <div class="cmdk" id="cmdk" hidden role="dialog" aria-modal="true" aria-label="Search">
   <div class="cmdk-panel">
     <div class="cmdk-input"><span class="cmdk-icon">⌕</span><input id="cmdk-q" placeholder="Paste a wallet or transaction, or type an exchange / page…" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div>

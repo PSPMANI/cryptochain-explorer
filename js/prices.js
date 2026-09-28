@@ -1,6 +1,3 @@
-// USD prices for every chain's native coin.
-// Primary: one batched CoinGecko call (cached 60 s). Fallback: Coinbase public exchange rates, matched by
-// symbol. Last good prices are remembered (memory + localStorage), so a rate limit never zeroes every value.
 import { CHAINS } from './chains.js';
 import { fetchJSON } from './utils.js';
 
@@ -11,7 +8,7 @@ let last = (() => { try { return JSON.parse(localStorage.getItem(STORE) || '{}')
 
 function remember(p) {
   last = { ...last, ...p };
-  try { localStorage.setItem(STORE, JSON.stringify(last)); } catch { /* storage unavailable (e.g. Node tests) */ }
+  try { localStorage.setItem(STORE, JSON.stringify(last)); } catch { }
 }
 
 async function fromCoinbase() {
@@ -32,13 +29,12 @@ export async function getPrices() {
       { ttl: 60000 });
     const p = Object.fromEntries(Object.entries(r).map(([id, v]) => [id, { usd: v.usd, change: v.usd_24h_change }]));
     if (Object.keys(p).length) { remember(p); return last; }
-  } catch { /* rate-limited or down: fall back below */ }
+  } catch { }
   try {
     const p = await fromCoinbase();
-    // Keep CoinGecko's 24h change where we had one
     for (const [id, v] of Object.entries(p)) if (last[id] && last[id].change != null) v.change = last[id].change;
     if (Object.keys(p).length) remember(p);
-  } catch { /* keep last known prices */ }
+  } catch { }
   return last;
 }
 

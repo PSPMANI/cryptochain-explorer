@@ -1,7 +1,3 @@
-// Bitcoin legacy (Base58Check 1…/3…) ⇄ Bitcoin Cash CashAddr (bitcoincash:q…/p…).
-// Both encode the same hash160, so a Bitcoin address and its Bitcoin Cash twin are controlled by the same key/script.
-// DOM-free (uses globalThis.crypto.subtle), works in the browser and Node.
-
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 const GEN = [0x98f2bc8e61n, 0x79b76d99e2n, 0xf33e5fb3c4n, 0xae2eabe2a8n, 0x1e4f43e470n];
@@ -47,7 +43,6 @@ function convertBits(data, from, to, pad) {
 }
 const prefixData = p => [...p].map(c => c.charCodeAt(0) & 31).concat([0]);
 
-/** "1BvBM…" / "3J98…" → "bitcoincash:q…" / "bitcoincash:p…" (null if not a valid legacy address). */
 export async function legacyToCash(addr) {
   let raw;
   try { raw = b58decode(addr); } catch { return null; }
@@ -62,7 +57,6 @@ export async function legacyToCash(addr) {
   return 'bitcoincash:' + [...payload, ...checksum].map(v => CHARSET[v]).join('');
 }
 
-/** "bitcoincash:q…" or bare "q…" → legacy "1…" / "3…" (null if invalid). */
 export async function cashToLegacy(addr) {
   const s = addr.toLowerCase().replace(/^bitcoincash:/, '');
   const vals = [...s].map(c => CHARSET.indexOf(c));

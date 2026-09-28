@@ -1,5 +1,3 @@
-// Plain-language investigation report: a single self-contained HTML document (opens in any browser,
-// prints / saves as PDF cleanly). Built from the investigation model, cross-chain transfers and the full trace.
 import { CHAIN } from './chains.js';
 import { COUNTRY, CATEGORY_LABEL, flag } from './entities.js';
 
@@ -18,12 +16,6 @@ const FINAL = {
   small: 'Small amounts (not followed)', limit: 'Not followed yet (limit reached)', error: 'Could not be loaded',
 };
 
-/**
- * @param m     analysis model (investigate.analyze)
- * @param ctx   { address, name, chainIds, depth, bridges }
- * @param trace { sum, tr } from the full trace (may be null while it is still running)
- * @param site  base URL of the explorer, for transaction links
- */
 export function buildReport(m, ctx, trace, site) {
   const t = m.totals;
   const sum = trace && trace.sum;
@@ -32,7 +24,6 @@ export function buildReport(m, ctx, trace, site) {
   const title = ctx.name ? `${ctx.name} (${short(ctx.address)})` : ctx.address;
   const txLink = (chainId, hash) => (chainId && hash ? `<a href="${esc(site)}#/${chainId}/tx/${encodeURIComponent(hash)}">${esc(short(hash))}</a>` : '');
 
-  // ---------- plain-language summary
   const exch = sum ? sum.exchanges : [];
   const exchTotal = sum ? sum.byType.exchange || 0 : m.categories.exchange.out;
   const topEx = exch.slice(0, 3).map(x => `${x.name}${x.country ? ` ${flag(x.country)}` : ''} (${usd(x.usd)})`).join(', ');
@@ -54,12 +45,10 @@ export function buildReport(m, ctx, trace, site) {
     ${m.rows.filter(r => r.direction === 'out').length} transfers, dealing with ${t.counterparties} different counterparties on ${esc(nets)}.
     ${sum && sum.total ? `Following every dollar it sent through up to ${sum.maxHops} hops, <b>${pct(exchTotal, sum.total)} ended up at exchanges</b>${topEx ? ` (mainly ${esc(topEx)})` : ''}.` : ''}`;
 
-  // ---------- where the money ended up
   const finalRows = sum ? Object.entries(sum.byType).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
     `<tr><td>${esc(FINAL[k] || k)}</td><td class="r">${usd(v)}</td><td class="r">${pct(v, sum.total)}</td></tr>`).join('') : '';
   const exRows = exch.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(place(x.country))}</td><td class="r">${usd(x.usd)}</td><td class="r">${pct(x.usd, sum.total)}</td></tr>`).join('');
 
-  // ---------- money trail: hop by hop + main routes with timestamps
   const hopRows = sum ? sum.hops.map(h => `<tr><td>Hop ${h.hop}</td><td class="r">${h.wallets}</td><td class="r">${usd(h.arrived)}</td>
     <td>${Object.entries(h.ended).map(([k, v]) => `${esc(FINAL[k] || k)} ${usd(v)}`).join('; ') || '—'}</td><td class="r">${usd(h.passedOn)}</td></tr>`).join('') : '';
   const routes = sum && tr ? sum.finals.filter(f => f.nodeId && f.type !== 'small').slice(0, 12).map((f, i) => {
@@ -76,7 +65,6 @@ export function buildReport(m, ctx, trace, site) {
       <ol><li><span class="when">start</span> → <b>Investigated wallet</b> ${esc(short(ctx.address))}</li>${steps}</ol></div>`;
   }).join('') : '';
 
-  // ---------- cross-chain, counterparties, full log
   const bridgeRows = ctx.bridges.map(b => `<tr><td>${esc(utc(b.time))}</td><td>${b.direction === 'out' ? 'Sent out' : 'Received'}</td><td>${esc(b.protocol)}</td>
     <td>${esc(CHAIN[b.srcChain] ? CHAIN[b.srcChain].name : b.srcChain)} → ${esc(CHAIN[b.dstChain] ? CHAIN[b.dstChain].name : b.dstChain)}</td>
     <td class="r">${b.amount != null ? `${num(b.amount)} ${esc(b.symbol || '')}` : '—'}</td><td class="r">${usd(b.usd)}</td>
@@ -173,7 +161,6 @@ ${poison.map(w => `<tr><td class="addr">${esc(w.address)}</td><td class="addr">$
 </div></body></html>`;
 }
 
-/** CSV of the money trail: every traced transfer between wallets, with timestamps. */
 export function trailCSV(tr) {
   const q = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) || /^[=+\-@]/.test(s) ? `"${s.replace(/"/g, '""').replace(/^([=+\-@])/, "'$1")}"` : s; };
   const head = ['time_utc', 'hop', 'from', 'from_label', 'to', 'to_label', 'to_network', 'amount', 'asset', 'traced_usd', 'tx_hash', 'bridge'];

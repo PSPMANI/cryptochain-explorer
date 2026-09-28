@@ -1,15 +1,9 @@
-// BlockCypher adapter (Dogecoin, Dash, Litecoin; also works for other BlockCypher UTXO coins).
-// chain.api is the coin root, e.g. https://api.blockcypher.com/v1/doge/main
-// Unauthenticated limits are tight (~3 req/s, 100 req/hr per IP), so every
-// method does exactly one request and responses are cached briefly.
 
 import { fetchJSON, fromUnits, toMs, NotFound } from '../utils.js';
 
-const PAGE = 25;     // txs per getTxs page (/full allows up to 50)
-const TX_IO = 50;    // max inputs/outputs returned per tx
+const PAGE = 25;
+const TX_IO = 50;
 
-// Address formats per chain: base58 prefixes (P2PKH + P2SH) and bech32 HRP (if any).
-// Unknown chains fall back to generic base58 / bech32 checks.
 const FORMATS = {
   dogecoin: { base58: /^[DA9]/, p2sh: /^[A9]/ },
   dash: { base58: /^[X7]/, p2sh: /^7/ },
@@ -23,14 +17,13 @@ const HASH = /^[0-9a-fA-F]{64}$/;
 export default function create(chain) {
   const api = chain.api.replace(/\/$/, '');
   const dec = chain.decimals ?? 8;
-  const amt = v => Number(fromUnits(v ?? 0, dec).toFixed(dec)); // toFixed trims float noise (1.6440000000000001)
+  const amt = v => Number(fromUnits(v ?? 0, dec).toFixed(dec));
 
   const fmt = FORMATS[chain.id] || { base58: /^/, p2sh: /^[23M]/ };
 
   function checkAddress(address) {
     const a = String(address || '').trim();
     if (BASE58.test(a) && fmt.base58.test(a)) return a;
-    // Bech32 is case-insensitive; BlockCypher expects lowercase.
     const m = BECH32.exec(a.toLowerCase());
     if (m && (fmt.hrp ? m[1] === fmt.hrp : !FORMATS[chain.id])) return a.toLowerCase();
     throw new NotFound(`Not a valid ${chain.name} address`);
@@ -45,14 +38,12 @@ export default function create(chain) {
   function kindOf(a) {
     if (/^[a-z]{1,4}1p/.test(a)) return 'Wallet (Taproot)';
     if (/^[a-z]{1,4}1q/.test(a)) return a.length > 50 ? 'Script (P2WSH)' : 'Wallet (SegWit)';
-    return fmt.p2sh.test(a) ? 'Script (P2SH)' : 'Wallet'; // P2SH is usually multisig / wrapped script
+    return fmt.p2sh.test(a) ? 'Script (P2SH)' : 'Wallet';
   }
 
-  // Sum of values in a list of inputs/outputs that belong to `addr`.
   const sumFor = (list, addr, key) =>
     (list || []).reduce((s, x) => s + ((x.addresses || []).includes(addr) ? Number(x[key] || 0) : 0), 0);
 
-  // Sum and first address among inputs/outputs NOT belonging to `addr`.
   function others(list, addr, key) {
     let sum = 0, first = null;
     for (const x of list || []) {
@@ -64,7 +55,6 @@ export default function create(chain) {
     return { sum, first };
   }
 
-  /** Normalize a BlockCypher "full" tx into a TxSummary relative to `addr`. */
   function summarize(tx, addr) {
     const ins = tx.inputs || [], outs = tx.outputs || [];
     const sent = sumFor(ins, addr, 'output_value');
@@ -98,7 +88,6 @@ export default function create(chain) {
 
   async function getAddress(address) {
     const a = checkAddress(address);
-    // limit=1 keeps the payload small; we only need the totals here.
     const r = await fetchJSON(`${api}/addrs/${a}?limit=1`, { ttl: 30000 });
     if (!r || typeof r !== 'object' || r.error) throw new NotFound(r?.error || 'Address not found');
     const txCount = r.final_n_tx ?? r.n_tx ?? 0;
@@ -123,11 +112,6 @@ export default function create(chain) {
     };
   }
 
-  /**
-   * Full txs, newest first. BlockCypher pages with `before=<block height>` (exclusive),
-   * which would drop the rest of a block split across pages. So the cursor is
-   * { before: lastHeight + 1, skip: [hashes already shown at lastHeight] }.
-   */
   async function getTxs(address, cursor = null) {
     const a = checkAddress(address);
     let url = `${api}/addrs/${a}/full?limit=${PAGE}&txlimit=${TX_IO}`;
@@ -142,7 +126,6 @@ export default function create(chain) {
     if (r?.hasMore && confirmed.length) {
       const last = confirmed[confirmed.length - 1].block_height;
       const atLast = confirmed.filter(t => t.block_height === last).map(t => t.hash);
-      // If the whole page was one block we cannot make progress by re-including it; move past it.
       next = atLast.length === confirmed.length && cursor?.before === last + 1
         ? { before: last, skip: [] }
         : { before: last + 1, skip: atLast };
@@ -183,14 +166,13 @@ export default function create(chain) {
     if (pending && tx.received) extra.push({ label: 'First seen', value: new Date(toMs(tx.received)).toISOString() });
 
     return {
-      // Use the requested id: BlockCypher reports a different `hash` for Dash special txs (DIP2 coinbase).
       hash: h,
       status: pending ? 'pending' : 'success',
       time: pending ? null : toMs(tx.confirmed || tx.received),
       block: pending ? null : tx.block_height,
       confirmations: tx.confirmations ?? (pending ? 0 : null),
       fee: tx.fees != null ? amt(tx.fees) : null,
-      value: amt(tx.total),   // total output value
+      value: amt(tx.total),
       method: coinbase ? 'Coinbase' : 'Transfer',
       inputs,
       outputs,

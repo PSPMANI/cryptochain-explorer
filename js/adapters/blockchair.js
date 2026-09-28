@@ -1,22 +1,16 @@
-// Blockchair adapter (Bitcoin Cash), chain.api e.g. https://api.blockchair.com/bitcoin-cash
-// Free tier: no key, ~30 req/min and a daily cap; over-use gets the IP temporarily
-// blocked (HTTP 430/402). Every method is one request, cached briefly.
-
 import { fetchJSON, fromUnits, NotFound } from '../utils.js';
 
 const PAGE = 25;
-const CASHADDR = /^(?:bitcoincash:)?([qp][02-9ac-hj-np-z]{41})$/i;   // P2PKH (q) / P2SH (p), 20-byte hash
+const CASHADDR = /^(?:bitcoincash:)?([qp][02-9ac-hj-np-z]{41})$/i;
 const LEGACY = /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/;
 const HASH = /^[0-9a-fA-F]{64}$/;
 
-/** Blockchair times are "YYYY-MM-DD HH:MM:SS" in UTC with no zone marker. */
 const utcMs = t => {
   if (!t) return null;
   const d = Date.parse(String(t).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(t) ? '' : 'Z'));
   return isNaN(d) ? null : d;
 };
 
-/** Decode an OP_RETURN script (hex) into readable text where possible. */
 function opReturnText(hex) {
   if (!hex || !/^6a/i.test(hex)) return null;
   const parts = [];
@@ -26,7 +20,7 @@ function opReturnText(hex) {
     if (op >= 1 && op <= 75) len = op;
     else if (op === 76) { len = parseInt(hex.slice(i, i + 2), 16); i += 2; }
     else if (op === 77) { len = parseInt(hex.slice(i + 2, i + 4) + hex.slice(i, i + 2), 16); i += 4; }
-    else continue; // other opcodes: skip
+    else continue;
     const chunk = hex.slice(i, i + len * 2); i += len * 2;
     const bytes = chunk.match(/../g)?.map(h => parseInt(h, 16)) || [];
     const printable = bytes.length && bytes.every(b => b === 10 || b === 13 || (b >= 32 && b < 127));
@@ -40,7 +34,6 @@ export default function create(chain) {
   const dec = chain.decimals ?? 8;
   const amt = v => Number(fromUnits(v ?? 0, dec).toFixed(dec));
 
-  /** Blockchair signals throttling with non-standard statuses (430 blacklisted, 402 over quota). */
   async function get(url, ttl) {
     try {
       return await fetchJSON(url, { ttl });
@@ -50,10 +43,8 @@ export default function create(chain) {
     }
   }
 
-  /** Accepts bitcoincash:q…, bare q…/p… and legacy 1…/3… Returns the form sent to the API. */
   function checkAddress(address) {
     const a = String(address || '').trim();
-    // Also used as the fallback provider for Litecoin / Dogecoin / Dash: plain base58 / bech32 there
     if (chain.id !== 'bitcoin-cash') {
       if (/^[a-zA-Z0-9]{25,90}$/.test(a)) return a;
       throw new NotFound('Invalid address');
@@ -64,11 +55,9 @@ export default function create(chain) {
     throw new NotFound('Not a valid Bitcoin Cash address');
   }
 
-  /** Blockchair returns bare cashaddr in tx inputs/outputs; show the prefixed form everywhere. */
   const canon = a => (chain.id === 'bitcoin-cash' && a && CASHADDR.test(a) ? `bitcoincash:${CASHADDR.exec(a)[1].toLowerCase()}` : a || null);
 
   async function addressDashboard(a, offset, details) {
-    // "txs,utxos" limit/offset pairs: we never need the UTXO list.
     const q = `limit=${PAGE},0&offset=${offset},0` + (details ? '&transaction_details=true' : '');
     const r = await get(`${api}/dashboards/address/${a}?${q}`, 30000);
     const key = r?.data && Object.keys(r.data)[0];
@@ -79,7 +68,6 @@ export default function create(chain) {
 
   async function getAddress(address) {
     const a = checkAddress(address);
-    // Same URL as the first getTxs page, so the cache serves both.
     const { key, d } = await addressDashboard(a, 0, true);
     const x = d.address;
     const txCount = Number(x.transaction_count ?? 0);
@@ -108,10 +96,6 @@ export default function create(chain) {
     };
   }
 
-  /**
-   * transaction_details=true gives { hash, time, block_id, balance_change } per tx.
-   * Counterparties and fees are not included (one call per page keeps us under the limit).
-   */
   async function getTxs(address, cursor = null) {
     const a = checkAddress(address);
     const offset = Number(cursor) || 0;

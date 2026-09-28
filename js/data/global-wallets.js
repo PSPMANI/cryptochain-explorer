@@ -1,7 +1,3 @@
-// Publicly labeled wallets of international exchanges, market makers, custodians and stablecoin issuers.
-// Source: Blockscout address metadata (Open Labels Initiative tags), collected 2026-09-26 by scripts/global-labels.mjs.
-// EVM addresses (lowercase) apply on every EVM chain. Token contracts are excluded; hack/exploit wallets are category 'exploit'.
-// [address, entity, category, label]   (location comes from js/data/entity-directory.js)
 export const GLOBAL_WALLETS = [
   ["0x073dca8acbc11ffb0b5ae7ef171e4c0b065ffa47","Alameda Research","fund","Alameda Research 1"],
   ["0xfa453aec042a837e4aebbadab9d4e25b15fad69d","Alameda Research","fund","Alameda Research 14"],

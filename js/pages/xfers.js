@@ -1,6 +1,3 @@
-// Live outgoing transfers on an address page: the moment the wallet sends (pending or confirmed),
-// a card shows the real destination address (token recipients, not token contracts) and verifies it
-// automatically: exchange? deposit address? bridge → which chain / recipient? plain wallet?
 import { CHAIN } from '../chains.js';
 import { verifyDestination } from '../alerts.js';
 import { toast } from '../core.js';
@@ -8,11 +5,7 @@ import { esc, short, amount, link, copyBtn, timeCell } from '../ui.js';
 
 const VERDICT_CLASS = { service: 'v-other', exchange: 'v-ex', deposit: 'v-ex', bridge: 'v-br', exploit: 'v-danger', dex: 'v-dx', contract: 'v-other', wallet: 'v-wallet' };
 
-/**
- * Outgoing transfers from native tx summaries + token transfers.
- * For a tx that moved tokens, the destination is the token recipient (tx.to is just the token contract).
- */
-export function outgoingTransfers(addr, txItems, tokItems = []) {
+function outgoingTransfers(addr, txItems, tokItems = []) {
   const me = addr.toLowerCase();
   const tokOut = tokItems.filter(t => t.from && t.from.toLowerCase() === me && t.to);
   const byHash = new Map();
@@ -23,7 +16,6 @@ export function outgoingTransfers(addr, txItems, tokItems = []) {
     const key = to => `${t.hash}:${String(to).toLowerCase()}`;
     const toks = byHash.get(t.hash);
     if (t.tokenTransfers && t.tokenTransfers.length) {
-      // Adapter already knows the real token recipients (decoded even while the tx is pending)
       t.tokenTransfers.forEach(k => out.push({ key: key(k.to), hash: t.hash, time: t.time, status: t.status, to: k.to, toName: k.toName, toEntity: k.toEntity, amount: k.value, symbol: k.symbol, method: t.method, via: t.to }));
       byHash.delete(t.hash);
     } else if (toks) {
@@ -33,9 +25,8 @@ export function outgoingTransfers(addr, txItems, tokItems = []) {
       out.push({ key: key(t.to), hash: t.hash, time: t.time, status: t.status, to: t.to, toName: t.toName, toEntity: t.toEntity, amount: t.value, symbol: t.symbol, method: t.method });
     }
   }
-  // Token moves initiated by someone else (router / transferFrom): still money leaving this wallet
   for (const [hash, toks] of byHash) toks.forEach(k => out.push({ key: `${hash}:${String(k.to).toLowerCase()}`, hash, time: k.time, status: k.status || 'success', to: k.to, toName: k.toName, toEntity: k.toEntity, amount: k.value, symbol: k.symbol, method: k.method }));
-  return out.sort((a, b) => (b.time || Infinity) - (a.time || Infinity)); // pending (no time) first
+  return out.sort((a, b) => (b.time || Infinity) - (a.time || Infinity));
 }
 
 export function mountOutgoing(el, { chainId, address }) {
@@ -65,7 +56,6 @@ export function mountOutgoing(el, { chainId, address }) {
   }
 
   return {
-    /** Feed the latest page(s). initial = first load (show the 3 most recent, no toasts). */
     update(txItems, tokItems, { initial = false } = {}) {
       const list = outgoingTransfers(address, txItems, tokItems);
       const fresh = [];

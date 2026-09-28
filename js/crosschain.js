@@ -1,10 +1,3 @@
-// Cross-chain tracking through public bridge indexers (all keyless, browser-friendly):
-//   Across     app.across.to/api            deposits by depositor / recipient / tx
-//   LayerZero  scan.layerzero-api.com/v1    messages by wallet / tx (Stargate, OFT tokens, ...)
-//   Wormhole   api.wormholescan.io/api/v1   operations by address / tx (Portal, NTT, CCTP via Wormhole, ...)
-// Everything is normalized to a BridgeTransfer:
-//   { protocol, app, status, time, srcChain, srcTx, dstChain, dstTx, sender, recipient, amount, symbol, usd }
-// srcChain / dstChain are CryptChain chain ids when we support the chain, otherwise a readable name.
 import { CHAINS, CHAIN } from './chains.js';
 import { fetchJSON, fromUnits, toMs } from './utils.js';
 
@@ -15,17 +8,14 @@ const WH = 'https://api.wormholescan.io/api/v1';
 const byEvmId = Object.fromEntries(CHAINS.filter(c => c.chainId).map(c => [c.chainId, c.id]));
 const evmChain = id => byEvmId[Number(id)] || `Chain ${id}`;
 
-// LayerZero uses chain names; most match our ids
 const LZ_NAMES = { hyperliquid: 'hyperevm', 'zksync-era': 'zksync', zksync: 'zksync', avax: 'avalanche', bnb: 'bsc', 'sei-evm': 'sei', xdai: 'gnosis' };
 const lzChain = n => (n && (CHAIN[n] ? n : LZ_NAMES[n])) || n || 'unknown';
 
-// Wormhole chain ids (https://wormhole.com/docs/products/reference/chain-ids/)
 const WH_CHAINS = { 1: 'solana', 2: 'ethereum', 4: 'bsc', 5: 'polygon', 6: 'avalanche', 14: 'celo', 15: 'near', 21: 'sui',
   22: 'aptos', 23: 'arbitrum', 24: 'optimism', 25: 'gnosis', 30: 'base', 34: 'scroll', 35: 'mantle', 36: 'blast', 38: 'linea',
   39: 'berachain', 40: 'sei', 44: 'unichain', 45: 'worldchain', 46: 'ink', 47: 'hyperevm' };
 const whChain = id => WH_CHAINS[id] || `Wormhole chain ${id}`;
 
-// Across token metadata (symbol / decimals) per chain, cached
 const tokenLists = new Map();
 async function acrossToken(chainId, address) {
   if (!tokenLists.has(chainId)) {
@@ -82,7 +72,6 @@ function normWh(o) {
 
 const settle = ps => Promise.allSettled(ps).then(rs => rs.flatMap(r => r.status === 'fulfilled' ? r.value : []));
 
-/** All bridge transfers sent or received by an address, newest first. */
 export async function bridgeActivity(address, limit = 25) {
   const isEvm = /^0x[0-9a-fA-F]{40}$/.test(address);
   const list = await settle([
@@ -98,8 +87,6 @@ export async function bridgeActivity(address, limit = 25) {
     .sort((a, b) => (b.time || 0) - (a.time || 0));
 }
 
-/** Look up one source tx in every bridge indexer. Returns a BridgeTransfer or null.
- *  `sender` (the tx's from address) lets us pull full Across details (amount, token, recipient). */
 export async function resolveBridgeTx(chainId, hash, sender = null) {
   const chain = CHAIN[chainId];
   const acrossFull = async s => {

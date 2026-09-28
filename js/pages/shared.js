@@ -1,11 +1,9 @@
-// UI pieces shared by several pages.
 import { CHAIN } from '../chains.js';
 import { chainName } from '../crosschain.js';
 import { esc, link, timeCell } from '../ui.js';
 
 const ICON = { 'exchange-deposit': '🏦', 'exchange-withdrawal': '🏦', 'exchange-internal': '🔁', institution: '🏢', 'bridge-out': '🌉', 'bridge-in': '🌉', exploit: '⚠️', activity: '•' };
 
-/** One alert as a list item. */
 export function alertItem(a) {
   const b = a.bridge;
   const bridgeLine = b ? `<div class="alert-bridge">

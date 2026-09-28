@@ -1,8 +1,3 @@
-// Publicly labeled wallets of India-focused exchanges.
-// Source: Blockscout address metadata (Open Labels Initiative tags), collected 2026-09-26.
-// EVM addresses, lowercase; they apply on every EVM chain. Token contracts were removed; hack/exploiter wallets
-// are category 'exploit', never 'exchange'. Regenerate with scripts/india-labels.mjs.
-// [address, exchange, category, label]
 export const INDIA_WALLETS = [
   ["0x637c9ab96f82e4d0e477554957c6db8b84390ea8","Bitbns","exchange","Bitbns: Deployer 1"],
   ["0x2407b9b9662d970ece2224a0403d3b15c7e4d1fe","CoinDCX","exchange","CoinDCX 2"],

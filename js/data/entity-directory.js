@@ -1,8 +1,4 @@
-// International exchanges and other named entities CryptChain recognizes.
-// Used by the app (names, categories, locations) and by scripts/global-labels.mjs (which collects their labeled wallets).
-// [search term, canonical name, category, country]  country = HQ / main regulator; GLOBAL = offshore / multi-entity
 export const ENTITIES = [
-  // exchanges
   ['Binance', 'Binance', 'exchange', 'GLOBAL'], ['Coinbase', 'Coinbase', 'exchange', 'US'], ['Kraken', 'Kraken', 'exchange', 'US'],
   ['OKX', 'OKX', 'exchange', 'GLOBAL'], ['OKEx', 'OKX', 'exchange', 'GLOBAL'], ['Bybit', 'Bybit', 'exchange', 'AE'],
   ['Bitfinex', 'Bitfinex', 'exchange', 'GLOBAL'], ['KuCoin', 'KuCoin', 'exchange', 'GLOBAL'], ['Gate.io', 'Gate', 'exchange', 'GLOBAL'],
@@ -25,14 +21,11 @@ export const ENTITIES = [
   ['Bitazza', 'Bitazza', 'exchange', 'TH'], ['Rain', 'Rain', 'exchange', 'BH'], ['BitoEX', 'BitoEX', 'exchange', 'TW'], ['ProBit', 'ProBit', 'exchange', 'KR'],
   ['XT.com', 'XT.com', 'exchange', 'GLOBAL'], ['AscendEX', 'AscendEX', 'exchange', 'GLOBAL'], ['Bitrue', 'Bitrue', 'exchange', 'GLOBAL'],
   ['Hotcoin', 'Hotcoin', 'exchange', 'GLOBAL'], ['Toobit', 'Toobit', 'exchange', 'GLOBAL'], ['BloFin', 'BloFin', 'exchange', 'GLOBAL'],
-  // market makers / trading firms
   ['Wintermute', 'Wintermute', 'fund', 'GB'], ['Jump Trading', 'Jump Trading', 'fund', 'US'], ['Cumberland', 'Cumberland', 'fund', 'US'],
   ['GSR', 'GSR', 'fund', 'GLOBAL'], ['Amber Group', 'Amber Group', 'fund', 'SG'], ['DWF Labs', 'DWF Labs', 'fund', 'GLOBAL'],
   ['Galaxy Digital', 'Galaxy Digital', 'fund', 'US'], ['B2C2', 'B2C2', 'fund', 'GB'], ['Flow Traders', 'Flow Traders', 'fund', 'NL'],
   ['Alameda Research', 'Alameda Research', 'fund', 'GLOBAL'], ['Three Arrows', 'Three Arrows Capital', 'fund', 'GLOBAL'],
-  // custodians
   ['BitGo', 'BitGo', 'custodian', 'US'], ['Anchorage', 'Anchorage Digital', 'custodian', 'US'], ['Copper', 'Copper', 'custodian', 'GB'],
   ['Coinbase Custody', 'Coinbase Custody', 'custodian', 'US'], ['Coinbase Prime', 'Coinbase Prime', 'custodian', 'US'], ['Ceffu', 'Ceffu', 'custodian', 'GLOBAL'],
-  // stablecoin issuers
   ['Tether', 'Tether', 'issuer', 'GLOBAL'], ['Circle', 'Circle', 'issuer', 'US'], ['Paxos', 'Paxos', 'issuer', 'US'],
 ];

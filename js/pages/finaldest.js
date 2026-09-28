@@ -1,6 +1,3 @@
-// "Where did all the money end up?": runs a FullTrace for the investigated wallet and shows
-// progress, the 100% breakdown of final destinations, exchanges by location (map), the route graph,
-// and every end point with its path.
 import { CHAIN } from '../chains.js';
 import { FullTrace } from '../fulltrace.js';
 import { COUNTRY, flag, CATEGORY_LABEL } from '../entities.js';
@@ -71,7 +68,6 @@ export function mountFinalDestinations(el, m, ctx, stale) {
     renderTable(sum);
     renderGeo(sum);
     graph.fit();
-    // Money the limits cut off can be traced further, from exactly where it stopped
     const more = el.querySelector('#ft-more');
     if (sum.notFollowed > 0.5) {
       more.innerHTML = `<div class="notice warn ft-continue"><b>${usd(sum.notFollowed)} (${((sum.notFollowed / (sum.total || 1)) * 100).toFixed(1)}%) hasn't been followed to the end yet.</b>
@@ -86,7 +82,6 @@ export function mountFinalDestinations(el, m, ctx, stale) {
     } else more.innerHTML = sum.total ? '<div class="notice ok-note">✓ Every dollar was followed to an end point (or is below the follow threshold).</div>' : '';
   }
 
-  // Hop-by-hop: how much money reached each hop, where it ended there, and how much moved on
   function renderHops(sum) {
     if (!sum.hops.length) { el.querySelector('#ft-hops-table').innerHTML = ''; return; }
     const cell = (row, t) => row.ended[t] ? `<span title="${esc(TYPES[t].label)}">${TYPES[t].icon} ${usd(row.ended[t])}</span>` : '';
@@ -152,7 +147,6 @@ export function mountFinalDestinations(el, m, ctx, stale) {
     });
   }
 
-  // Map of where the money was cashed in, by exchange location (bubble size = amount)
   async function renderGeo(sum) {
     const box = el.querySelector('#ft-geo');
     const byCc = {};

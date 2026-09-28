@@ -1,7 +1,6 @@
-// Tokens watched through event logs on EVM networks that have no free history indexer.
-// Every entry was verified on-chain (symbol() / decimals() via the chain's public RPC) on 2026-09-27.
-// [contract, symbol, decimals]
 export const WATCH_TOKENS = {
+  gnosis: [['0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83', 'USDC', 6], ['0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0', 'USDC.e', 6], ['0x4ECaBa5870353805a9F068101A40E0f32ed605C6', 'USDT', 6]],
+  scroll: [['0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4', 'USDC', 6], ['0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df', 'USDT', 6]],
   bsc: [['0x55d398326f99059fF775485246999027B3197955', 'USDT', 18], ['0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', 'USDC', 18],
     ['0xc5f0f7b66764F6ec8C8Dff7BA683102295E16409', 'FDUSD', 18], ['0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', 'BUSD', 18],
     ['0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', 'WBNB', 18]],

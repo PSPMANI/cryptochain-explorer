@@ -1,4 +1,3 @@
-// Aptos adapter: fullnode REST API (+ the public indexer GraphQL for full account history and tokens).
 import { fetchJSON, fromUnits, NotFound } from '../utils.js';
 
 const ADDR_RE = /^(0x)?[0-9a-fA-F]{1,64}$/;
@@ -6,19 +5,15 @@ const HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 const PAGE = 20;
 const APT_COIN = '0x1::aptos_coin::AptosCoin';
 const APT_FA = '0x000000000000000000000000000000000000000000000000000000000000000a';
-// Fullnodes prune old ledger versions; the archive serves full history (410 → retry there).
 const ARCHIVE = 'https://archive.mainnet.aptoslabs.com/v1';
 
-/** Canonical 0x + 64 hex, lowercase. */
 const canon = a => '0x' + String(a).replace(/^0x/i, '').toLowerCase().padStart(64, '0');
 const lastSeg = t => String(t || '').split('::').pop() || t;
-/** Aptos timestamps are microseconds. */
 const usToMs = us => (us == null || us === '' || us === '0' ? null : Math.floor(Number(us) / 1000));
 const isApt = asset => asset === APT_COIN || asset === APT_FA;
 const shortFn = f => (f ? f.split('::').slice(-2).join('::') : null);
 const abs = x => (x < 0n ? -x : x);
 
-// Well-known fungible assets, so common transfers need no metadata lookup (the anonymous API quota is tight).
 const KNOWN = {
   '0x357b0b74bc833e95a115ad22604854d6b0fca151cecd94111770e5d6ffc9dc2b': { symbol: 'USDt', name: 'Tether USD', decimals: 6 },
   '0xbae207659db88bea0cbead6da0ed00aac12edcdda169e591cd41c94180b46f3b': { symbol: 'USDC', name: 'USDC', decimals: 6 },
@@ -29,7 +24,6 @@ export default function create(chain) {
   const graphql = api + '/graphql';
   const apt = v => fromUnits(v, chain.decimals);
 
-  /** GET from the fullnode, falling back to the archive node when the data was pruned (HTTP 410). */
   async function get(path, opts = {}) {
     try {
       return await fetchJSON(api + path, opts);
@@ -42,10 +36,6 @@ export default function create(chain) {
   const view = (fn, typeArgs, args) =>
     fetchJSON(api + '/view', { method: 'POST', body: { function: fn, type_arguments: typeArgs, arguments: args } });
 
-  /**
-   * Indexer GraphQL query; returns `data` or throws. The anonymous tier is rate limited per IP
-   * (compute units per 5 min, answered as a GraphQL error with code 429), so callers must have a fallback.
-   */
   async function gql(query, variables) {
     const r = await fetchJSON(graphql, { method: 'POST', body: { query, variables }, timeout: 8000 });
     if (!r || r.errors || !r.data) throw new Error(r?.errors?.[0]?.message || 'Indexer error');
@@ -58,7 +48,6 @@ export default function create(chain) {
     return canon(a);
   }
 
-  // Asset metadata cache: coin type (0x..::m::T) or fungible-asset metadata address → { symbol, decimals }.
   const metaCache = new Map();
   function assetMeta(asset) {
     if (isApt(asset)) return Promise.resolve({ symbol: chain.symbol, name: 'Aptos Coin', decimals: chain.decimals });
@@ -71,17 +60,16 @@ export default function create(chain) {
       metaCache.set(asset, get(path, { ttl: 3600e3 })
         .then(r => ({ symbol: r?.data?.symbol || lastSeg(asset), name: r?.data?.name || null, decimals: Number(r?.data?.decimals ?? 8) }))
         .catch(() => {
-          metaCache.delete(asset); // don't remember failures (often just rate limiting)
+          metaCache.delete(asset);
           return { symbol: isCoin ? lastSeg(asset) : `${asset.slice(0, 6)}…`, name: null, decimals: 8 };
         }));
     }
     return metaCache.get(asset);
   }
 
-  /** APT balance: view function (covers coin + paired FA), then FA store, then legacy CoinStore resource. */
   async function aptBalance(address) {
-    try { const [v] = await view('0x1::coin::balance', [APT_COIN], [address]); return BigInt(v); } catch { /* next */ }
-    try { const [v] = await view('0x1::primary_fungible_store::balance', ['0x1::fungible_asset::Metadata'], [address, '0xa']); return BigInt(v); } catch { /* next */ }
+    try { const [v] = await view('0x1::coin::balance', [APT_COIN], [address]); return BigInt(v); } catch { }
+    try { const [v] = await view('0x1::primary_fungible_store::balance', ['0x1::fungible_asset::Metadata'], [address, '0xa']); return BigInt(v); } catch { }
     try {
       const r = await get(`/accounts/${address}/resource/${encodeURIComponent(`0x1::coin::CoinStore<${APT_COIN}>`)}`);
       return BigInt(r?.data?.coin?.value || 0);
@@ -91,7 +79,7 @@ export default function create(chain) {
   async function getAddress(address) {
     address = checkAddr(address);
     const [acct, bal, resources, modules, idx] = await Promise.all([
-      get(`/accounts/${address}`), // throws NotFound on malformed input; stateless accounts return seq 0
+      get(`/accounts/${address}`),
       aptBalance(address),
       get(`/accounts/${address}/resources?limit=200`).catch(() => []),
       get(`/accounts/${address}/modules?limit=1`).catch(() => []),
@@ -102,7 +90,6 @@ export default function create(chain) {
     const seq = Number(acct?.sequence_number || 0);
     const types = (Array.isArray(resources) ? resources : []).map(r => r.type || '');
 
-    // Kind from resources/modules.
     let kind = 'Wallet';
     if (Array.isArray(modules) && modules.length) kind = 'Contract';
     else if (types.includes('0x1::multisig_account::MultisigAccount')) kind = 'Multisig';
@@ -110,7 +97,6 @@ export default function create(chain) {
     let name = null;
     if (/^0x0{63}[134]$/.test(address)) name = { 1: 'Aptos Framework', 3: 'Aptos Token (legacy)', 4: 'Aptos Token Objects' }[address.slice(-1)];
 
-    // Token balances: indexer when available, else legacy CoinStore<T> resources.
     let tokens = [];
     if (idx?.current_fungible_asset_balances) {
       tokens = idx.current_fungible_asset_balances.filter(b => !isApt(b.asset_type)).map(b => ({
@@ -139,16 +125,12 @@ export default function create(chain) {
       labels: [],
       kind,
       balance: apt(bal),
-      txCount: seq, // sent transactions only (a full count needs a costly indexer aggregate)
+      txCount: seq,
       stats,
       tokens,
     };
   }
 
-  /**
-   * Asset flows of a user transaction from its events: [{ owner, asset, amount: bigint (signed) }].
-   * FA Deposit/Withdraw events name a store object, so the store → owner/asset map comes from `changes`.
-   */
   function flows(tx) {
     const stores = new Map();
     for (const c of tx.changes || []) {
@@ -173,11 +155,9 @@ export default function create(chain) {
       } else if (t === '0x1::coin::CoinDeposit' || t === '0x1::coin::CoinWithdraw') {
         push(d.account, d.coin_type, d.amount, t.endsWith('Deposit') ? 1n : -1n);
       } else if (t === '0x1::coin::DepositEvent' || t === '0x1::coin::WithdrawEvent') {
-        // Legacy events: asset type isn't in the event; assume APT (by far the common case).
         push(e.guid?.account_address, APT_COIN, d.amount, t.endsWith('DepositEvent') ? 1n : -1n);
       }
     }
-    // Merge by (owner, normalized asset), with APT coin/FA treated as one asset.
     const merged = new Map();
     for (const f of out) {
       const asset = isApt(f.asset) ? APT_COIN : f.asset;
@@ -186,7 +166,6 @@ export default function create(chain) {
     }
     let list = [...merged.values()].filter(f => f.amount !== 0n);
 
-    // No events (e.g. pruned detail) → read a plain transfer from the payload.
     if (!list.length && tx.success !== false) {
       const fn = tx.payload?.function || '';
       const args = tx.payload?.arguments || [];
@@ -195,7 +174,7 @@ export default function create(chain) {
         try {
           const v = BigInt(args[1]);
           list = [{ owner: canon(tx.sender), asset, amount: -v }, { owner: canon(args[0]), asset, amount: v }];
-        } catch { /* ignore */ }
+        } catch { }
       }
     }
     return list;
@@ -209,7 +188,6 @@ export default function create(chain) {
     : tx.type?.replace(/_transaction$/, '') || null);
   const statusOf = tx => (tx.type === 'pending_transaction' ? 'pending' : tx.success === false ? 'failed' : 'success');
 
-  /** TxSummary relative to `address`, from base fields plus the tx's asset flows. */
   async function summaryFrom(base, fl, address) {
     const sender = base.from;
     const s = { fromName: null, to: null, toName: null, direction: null, value: 0, symbol: chain.symbol, ...base };
@@ -230,7 +208,6 @@ export default function create(chain) {
     return s;
   }
 
-  /** TxSummary from a fullnode REST transaction. */
   const summarize = (tx, address) => summaryFrom({
     hash: tx.hash || String(tx.version),
     time: usToMs(tx.timestamp),
@@ -240,10 +217,6 @@ export default function create(chain) {
     method: methodOf(tx),
   }, flows(tx), address);
 
-  /**
-   * TxSummary from an indexer row (account_transactions + fungible_asset_activities).
-   * The indexer has no tx hashes, so `hash` is the ledger version; getTx() accepts versions too.
-   */
   function summarizeIndexed(row, address) {
     const ut = row.user_transaction;
     const acts = row.fungible_asset_activities || [];
@@ -273,12 +246,6 @@ export default function create(chain) {
     }, [...merged.values()].filter(f => f.amount !== 0n), address);
   }
 
-  /**
-   * Newest first. Primary source is the indexer (every tx touching the account, incoming included,
-   * one request per page); if it's unavailable or rate limited, fall back to the fullnode's /accounts/{a}/transactions, which only lists
-   * transactions *sent* by the account (sequence-number based), paged newest-first via `start`.
-   * Cursor: { mode: 'gql', offset } | { mode: 'rest', start }.
-   */
   async function getTxs(address, cursor = null) {
     address = checkAddr(address);
     if (!cursor || cursor.mode === 'gql') {
@@ -299,7 +266,6 @@ export default function create(chain) {
       }
     }
 
-    // REST fallback: sent transactions only. start = sequence number of the oldest tx on this page.
     let end = cursor?.mode === 'rest' ? cursor.start : null;
     if (end == null) end = Number((await get(`/accounts/${address}`))?.sequence_number || 0);
     if (end <= 0) return { items: [], next: null };
@@ -316,12 +282,11 @@ export default function create(chain) {
     hash = String(hash || '').trim();
     let path;
     if (HASH_RE.test(hash)) path = `/transactions/by_hash/${hash.toLowerCase()}`;
-    else if (/^\d+$/.test(hash)) path = `/transactions/by_version/${hash}`; // versions work as ids too
+    else if (/^\d+$/.test(hash)) path = `/transactions/by_version/${hash}`;
     else throw new NotFound('Not an Aptos transaction hash');
 
     let tx;
     try { tx = await get(path); } catch (e) {
-      // Hashes of pruned transactions are unknown to the fullnode; try the archive before giving up.
       if (!(e instanceof NotFound) || !api.includes('mainnet.aptoslabs.com')) throw e;
       tx = await fetchJSON(ARCHIVE + path);
     }

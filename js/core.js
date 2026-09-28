@@ -1,16 +1,11 @@
-// Shared runtime helpers for pages: adapter loading, concurrency, page shell helpers, toasts.
 import { CHAIN } from './chains.js';
 import { esc } from './ui.js';
 
-export const main = typeof document !== 'undefined' ? document.getElementById('main') : null; // null in Node tests
+export const main = typeof document !== 'undefined' ? document.getElementById('main') : null;
 
 const adapters = new Map();
 const load = (chain, spec) => import(`./adapters/${spec.adapter}.js`).then(m => m.default({ ...chain, ...spec }));
 
-/**
- * Adapter for a chain. When the chain lists `fallback: { adapter, api }`, every call that fails with
- * anything other than NotFound (rate limit, outage, CORS error) is retried on the fallback provider.
- */
 export async function adapter(chainId) {
   if (!adapters.has(chainId)) {
     const chain = CHAIN[chainId];
@@ -36,10 +31,8 @@ export async function adapter(chainId) {
   return adapters.get(chainId);
 }
 
-/** Resolve with the promise's value, or reject after `ms`. */
 export const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Timed out')), ms))]);
 
-/** Run async tasks with limited concurrency. */
 export async function pool(items, n, fn) {
   const queue = [...items];
   await Promise.all(Array.from({ length: Math.min(n, queue.length) }, async () => {
@@ -66,7 +59,6 @@ export function setQuery(q) {
   document.querySelectorAll('input[name=q]').forEach(i => { if (document.activeElement !== i) i.value = q; });
 }
 
-/** Trigger a file download of `text`. */
 export function download(filename, text, type = 'text/csv') {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = Object.assign(document.createElement('a'), { href: url, download: filename });

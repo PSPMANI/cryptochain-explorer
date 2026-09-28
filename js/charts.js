@@ -1,7 +1,3 @@
-// Small SVG chart kit for the investigation dashboard.
-// Every chart returns an HTML string; call bindCharts(container) once after inserting it to enable
-// the shared tooltip (marks carry data-tip / data-tip-sub) and crosshairs (line charts).
-// Colors come from CSS tokens (--viz-*, --seq-*, --cat-*) so light/dark themes swap in one place.
 import { esc, usd, amount } from './ui.js';
 
 const W = 960;
@@ -9,7 +5,6 @@ const fmtDate = t => new Date(t).toLocaleDateString(undefined, { month: 'short',
 const fmtDateY = t => new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 const tip = (value, label) => `data-tip="${esc(value)}" data-tip-sub="${esc(label)}" tabindex="0"`;
 
-/** "Nice" axis ticks between lo and hi. */
 function ticks(lo, hi, n = 4) {
   if (hi === lo) return [lo];
   const span = hi - lo, step0 = span / n, mag = 10 ** Math.floor(Math.log10(step0));
@@ -20,7 +15,6 @@ function ticks(lo, hi, n = 4) {
 }
 const compactNum = v => Math.abs(v) >= 1e9 ? (v / 1e9).toFixed(1) + 'B' : Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : Math.abs(v) >= 1e3 ? (v / 1e3).toFixed(1) + 'k' : amount(v);
 
-// ---------------------------------------------------------------- balance over time (step line + area)
 export function balanceChart(points, symbol) {
   if (points.length < 2) return '<p class="muted small">Not enough history to draw a balance line.</p>';
   const H = 220, pl = 56, pr = 16, pt = 14, pb = 28;
@@ -42,7 +36,6 @@ export function balanceChart(points, symbol) {
   </svg>`;
 }
 
-// ---------------------------------------------------------------- daily / weekly volume (diverging bars)
 export function volumeChart(buckets, useUsd, unit) {
   if (!buckets.length) return '<p class="muted small">No dated transfers.</p>';
   const H = 240, pl = 56, pr = 16, pt = 14, pb = 28, mid = pt + (H - pt - pb) / 2;
@@ -72,8 +65,6 @@ export function volumeChart(buckets, useUsd, unit) {
   </svg>`;
 }
 
-// ---------------------------------------------------------------- horizontal bars with direct labels
-// items: [{ label, value, sub, color (CSS var or null), href }]
 export function hbarChart(items, fmt, { emptyText = 'Nothing to show.' } = {}) {
   const list = items.filter(i => i.value > 0);
   if (!list.length) return `<p class="muted small">${esc(emptyText)}</p>`;
@@ -86,7 +77,6 @@ export function hbarChart(items, fmt, { emptyText = 'Nothing to show.' } = {}) {
     </div>`).join('')}</div>`;
 }
 
-// ---------------------------------------------------------------- activity heatmap (weekday × hour, UTC)
 export function heatmap(rows) {
   const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
   let n = 0;
@@ -109,7 +99,6 @@ export function heatmap(rows) {
   </svg>`;
 }
 
-// ---------------------------------------------------------------- shared tooltip + crosshair
 let tipEl = null;
 function tooltip() {
   if (!tipEl) {
@@ -122,7 +111,7 @@ function tooltip() {
 }
 function showTip(x, y, value, label) {
   const t = tooltip();
-  t.querySelector('.tv').textContent = value;   // values/labels may come from API data: textContent only
+  t.querySelector('.tv').textContent = value;
   t.querySelector('.tl').textContent = label || '';
   t.style.display = 'block';
   const r = t.getBoundingClientRect();
@@ -131,7 +120,7 @@ function showTip(x, y, value, label) {
   t.style.left = left + 'px';
   t.style.top = top + 'px';
 }
-export function hideTip() { if (tipEl) tipEl.style.display = 'none'; }
+function hideTip() { if (tipEl) tipEl.style.display = 'none'; }
 
 export function bindCharts(root) {
   root.addEventListener('pointermove', e => {
@@ -146,7 +135,6 @@ export function bindCharts(root) {
   });
   root.addEventListener('focusout', hideTip);
 
-  // Crosshair on balance charts: snap to the nearest data point
   root.querySelectorAll('svg.balance').forEach(svg => {
     const pts = JSON.parse(svg.dataset.series);
     const [pl, pr, pt, pb, t0, t1, vmin, vmax] = svg.dataset.geom.split(',').map(Number);

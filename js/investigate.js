@@ -1,19 +1,9 @@
-// Investigation engine (DOM-free). The workflow the Investigate page drives:
-//   1. collect()   pull many pages of history per chain (native txs + token transfers where available)
-//   2. classify    every transfer: direction, asset, USD value, counterparty entity (exchange / bridge / dex / …)
-//   3. analyze()   totals per asset, per counterparty, per category, daily timeline, first/last activity
-//   4. cross-chain bridge activity comes from crosschain.bridgeActivity() and is merged by the page
 import { CHAIN } from './chains.js';
 import { adapter, withTimeout } from './core.js';
 import { entityOf } from './entities.js';
 
 const STABLES = new Set(['USDT', 'USDC', 'DAI', 'USDS', 'USDE', 'FDUSD', 'PYUSD', 'TUSD', 'USDD', 'USDC.E', 'USDT0', 'USD₮0', 'USDBC', 'RLUSD', 'USDT.E']);
 
-/**
- * Collect transfers for one chain.
- * onProgress({ chainId, stream, count, done }) is called after every page.
- * shouldStop() lets the page cancel when the user navigates away.
- */
 export async function collect(chainId, address, { maxItems = 500, onProgress = () => {}, shouldStop = () => false } = {}) {
   const a = await adapter(chainId);
   const streams = [{ name: 'transactions', fn: (c) => a.getTxs(address, c) }];
@@ -28,8 +18,6 @@ export async function collect(chainId, address, { maxItems = 500, onProgress = (
       let page;
       try { page = await withTimeout(s.fn(cursor), 30000); }
       catch (e) { errors.push(`${s.name}: ${e.message}`); break; }
-      // Where token transfers come from their own stream, zero-value native txs are just contract calls:
-      // the money movement is already in the token stream, so skip them to keep counterparties honest.
       const items = page.items.filter(t => !(a.getTokenTransfers && s.name === 'transactions' && !t.value));
       items.forEach(t => all.push({ ...t, chainId, stream: s.name }));
       count += page.items.length;
@@ -40,17 +28,12 @@ export async function collect(chainId, address, { maxItems = 500, onProgress = (
   return { items: all, errors };
 }
 
-/**
- * Fake tokens: flagged by the API, symbols with invisible/lookalike characters, or a token contract
- * pretending to be the chain's native coin (e.g. an ERC-20 called "ETH").
- */
 export function suspiciousToken(t) {
   if (!t.token) return false;
   const chain = CHAIN[t.chainId];
   return !!t.scam || /[^\x20-\x7E]/.test(t.symbol || '') || String(t.symbol).toUpperCase() === chain.symbol;
 }
 
-/** USD value of a transfer when we can price it: native coin via CoinGecko, stablecoins at $1, or the API's own rate. */
 export function usdOf(t, prices) {
   if (suspiciousToken(t)) return null;
   if (t.usd != null) return t.usd;
@@ -60,12 +43,11 @@ export function usdOf(t, prices) {
   return null;
 }
 
-/** Aggregate collected transfers into the report model. */
 export function analyze(items, address, prices) {
   const me = address.toLowerCase();
   const assets = new Map(), cps = new Map(), days = new Map();
   const cats = { exchange: { in: 0, out: 0, n: 0 }, bridge: { in: 0, out: 0, n: 0 }, dex: { in: 0, out: 0, n: 0 }, exploit: { in: 0, out: 0, n: 0 }, other: { in: 0, out: 0, n: 0 }, unlabeled: { in: 0, out: 0, n: 0 } };
-  const india = { in: 0, out: 0, n: 0, byExchange: {} }; // Indian exchanges (subset of cats.exchange)
+  const india = { in: 0, out: 0, n: 0, byExchange: {} };
   let first = null, last = null, totalIn = 0, totalOut = 0;
 
   const rows = items
@@ -117,7 +99,6 @@ export function analyze(items, address, prices) {
   const byValue = (k) => (x, y) => (y[k] - x[k]) || (y[k === 'inUsd' ? 'nIn' : 'nOut'] - x[k === 'inUsd' ? 'nIn' : 'nOut']);
   const counterparties = [...cps.values()];
 
-  // Warnings: fake tokens and address-poisoning lookalikes
   const warnings = [];
   const fakes = [...new Set(rows.filter(suspiciousToken).map(t => `${t.symbol} (${t.token})`))];
   if (fakes.length) warnings.push({ kind: 'fake-token', title: `${fakes.length} suspicious token${fakes.length > 1 ? 's' : ''} excluded from USD totals`, detail: fakes.slice(0, 5).join(', ') });
@@ -127,7 +108,6 @@ export function analyze(items, address, prices) {
   evm.forEach(c => { (groups[sig(c.address)] ||= []).push(c); });
   for (const g of Object.values(groups)) {
     if (g.length < 2) continue;
-    // The "real" one is the address with the most value/activity; the others imitate it
     g.sort((x, y) => (y.inUsd + y.outUsd) - (x.inUsd + x.outUsd) || (y.nIn + y.nOut) - (x.nIn + x.nOut));
     for (const fake of g.slice(1)) {
       fake.poison = g[0].address;
@@ -151,12 +131,11 @@ export function analyze(items, address, prices) {
   };
 }
 
-/** CSV export of classified transfers. */
 export function toCSV(rows) {
   const head = ['time_utc', 'chain', 'direction', 'amount', 'asset', 'usd', 'counterparty', 'counterparty_label', 'category', 'tx_hash', 'method'];
   const q = v => {
     const s = v == null ? '' : String(v);
-    return /[",\n]/.test(s) || /^[=+\-@]/.test(s) ? `"${s.replace(/"/g, '""').replace(/^([=+\-@])/, "'$1")}"` : s; // CSV-injection safe
+    return /[",\n]/.test(s) || /^[=+\-@]/.test(s) ? `"${s.replace(/"/g, '""').replace(/^([=+\-@])/, "'$1")}"` : s;
   };
   return [head.join(','), ...rows.map(t => [
     t.time ? new Date(t.time).toISOString() : '', t.chainId, t.direction, t.value, t.symbol,

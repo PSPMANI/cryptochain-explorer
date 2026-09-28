@@ -1,12 +1,5 @@
-// Directory of exchanges & institutions: #/exchanges/<region>[/<Name>]
-//   region: 'all' | 'india' | a country code (us, kr, jp, …) | 'global'
-// Lists every entity CryptChain recognizes, its publicly labeled wallets (grouped by role), live balances
-// on demand, and one-click watching of its main wallets.
 import { CHAIN } from '../chains.js';
-import { DIRECTORY, COUNTRY, CATEGORY_LABEL, flag, loadNonEvmLabels } from '../entities.js';
-import { INDIA_WALLETS } from '../data/india-wallets.js';
-import { GLOBAL_WALLETS } from '../data/global-wallets.js';
-import { auth } from '../auth.js';
+import { DIRECTORY, COUNTRY, CATEGORY_LABEL, flag, loadLabels } from '../entities.js';
 import { addWatch } from '../store.js';
 import { main, adapter, pool, withTimeout, toast } from '../core.js';
 import { getPrices, priceOf } from '../prices.js';
@@ -26,21 +19,19 @@ const ROLES = [
 const roleOf = (label, cat) => cat === 'exploit' ? '⚠ Hack / exploiter wallets' : ROLES.find(([, test]) => test(label))[0];
 const CAT_ICON = { exchange: '🏦', fund: '🏢', custodian: '🏛', issuer: '💵' };
 
-// entity name → wallets
 const WALLETS = new Map();
 const addWallet = (name, address, category, label, chainId = 'ethereum') => {
   if (!WALLETS.has(name)) WALLETS.set(name, []);
   if (!WALLETS.get(name).some(w => w.address === address)) WALLETS.get(name).push({ address, category, label, chainId, role: roleOf(label, category) });
 };
-for (const [address, name, category, label] of [...INDIA_WALLETS, ...GLOBAL_WALLETS]) addWallet(name, address, category, label);
 let nonEvmAdded = false;
 
 export async function exchangesPage(stale, region = 'all', selected = null) {
   region = (region || 'all').toLowerCase();
-  // Solana, Bitcoin, Litecoin, XRP, TRON, Aptos, NEAR exchange wallets (Dune Spellbook)
   const extra = [];
-  const nonEvm = await loadNonEvmLabels();
+  const { curated = [], ...nonEvm } = await loadLabels();
   if (!nonEvmAdded) {
+    for (const [address, name, category, label] of curated) addWallet(name, address, category, label);
     for (const [chainId, rows] of Object.entries(nonEvm || {})) for (const [a, name, label] of rows) addWallet(name, a, 'exchange', label, chainId);
     nonEvmAdded = true;
   }
@@ -97,7 +88,6 @@ function renderDetail(x, stale) {
   const order = ['⚠ Hack / exploiter wallets', ...ROLES.map(r => r[0])].filter(r => groups[r]);
   const main = x.wallets.filter(w => ['Hot wallets', 'Wallets', 'Withdrawal wallets', 'Cold wallets', 'Treasury & reserves'].includes(w.role));
   const place = x.country ? `${flag(x.country)} ${COUNTRY[x.country] ? COUNTRY[x.country].name : x.country}` : '';
-  // Non-EVM wallets first (there are fewer of them), then EVM; up to 400 rows per group
   const shown = w => [...(groups[w] || [])].sort((p, q) => (p.chainId === 'ethereum') - (q.chainId === 'ethereum') || p.chainId.localeCompare(q.chainId)).slice(0, 400);
   const nets = {};
   for (const w of x.wallets) if (w.category !== 'exploit') nets[w.chainId] = (nets[w.chainId] || 0) + 1;

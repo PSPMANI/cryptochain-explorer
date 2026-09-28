@@ -1,7 +1,6 @@
-// My workspace: alerts, watchlist, labels and saved investigations (kept in this browser).
 import { CHAIN } from '../chains.js';
 import { detect } from '../detect.js';
-import { listWatch, addWatch, removeWatch, listInvestigations, removeInvestigation, listAlerts, markAlertsRead, listLabels, removeLabel } from '../store.js';
+import { listWatch, addWatch, removeWatch, listInvestigations, removeInvestigation, listAlerts, markAlertsRead, listLabels, removeLabel, clearAll } from '../store.js';
 import { setCustomLabels, CATEGORY_LABEL, flag } from '../entities.js';
 import { main, adapter, withTimeout, toast } from '../core.js';
 import { getPrices, priceOf } from '../prices.js';
@@ -15,7 +14,13 @@ export async function accountPage(stale) {
   main.innerHTML = `
     <div class="page-head">
       <div><h1 class="page-title">📋 My workspace</h1>
-        <p class="muted">Your alerts, watched wallets, labels and saved investigations. Everything is kept in this browser; nothing is uploaded.</p></div>
+        <p class="muted">Your searches, alerts, watched wallets, labels and saved investigations.</p></div>
+      <button class="btn ghost small-btn" id="wipe">🗑 Clear all my data</button>
+    </div>
+    <div class="privacy"><span style="font-size:20px">🔒</span><div><b>Private to you.</b> <span class="muted">Everything on this page is saved only in this browser on this device. CryptChain has no accounts and no server database, so other visitors never see what you search, watch or label.</span></div></div>
+    <div class="card">
+      <div class="section-head"><h2>🕘 Recent searches</h2><button class="btn ghost small-btn" id="clear-recent">Clear</button></div>
+      <div id="recent-list"></div>
     </div>
     <div class="card">
       <div class="section-head"><h2>⚡ Flow alerts</h2><div class="row-gap">${notificationsButton()}<button class="btn ghost small-btn" id="markread">Mark all read</button></div></div>
@@ -36,6 +41,24 @@ export async function accountPage(stale) {
       <div id="inv-list"></div>
     </div>`;
 
+  const renderRecent = () => {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem('recent') || '[]').filter(r => CHAIN[r.chainId]); } catch {}
+    document.getElementById('recent-list').innerHTML = list.length
+      ? `<div class="quick">${list.map(r => `<a href="${esc(r.href)}">${chainDot(CHAIN[r.chainId])}${esc(r.label)}</a>`).join('')}</div>`
+      : '<p class="muted">No searches yet.</p>';
+  };
+  renderRecent();
+  document.getElementById('clear-recent').onclick = () => { try { localStorage.removeItem('recent'); } catch {} renderRecent(); toast('Recent searches cleared'); };
+  document.getElementById('wipe').onclick = () => {
+    if (!confirm('Delete your searches, watchlist, alerts, labels and saved investigations from this browser?')) return;
+    clearAll();
+    setCustomLabels([]);
+    window.dispatchEvent(new Event('alerts-changed'));
+    toast('All your data was removed from this browser');
+    accountPage(stale);
+  };
+
   document.getElementById('markread').onclick = () => { markAlertsRead(); renderAlerts(); window.dispatchEvent(new Event('alerts-changed')); };
   const renderAlerts = () => {
     const list = listAlerts();
@@ -47,7 +70,6 @@ export async function accountPage(stale) {
   accountAlertsHandler = () => { if (!stale()) renderAlerts(); };
   window.addEventListener('alerts-changed', accountAlertsHandler);
 
-  // Watchlist
   const form = document.getElementById('watch-form');
   const sel = form.querySelector('select');
   const fillChains = () => {
@@ -92,7 +114,6 @@ export async function accountPage(stale) {
   };
   renderWatch();
 
-  // My labels
   const renderLabels = async () => {
     const list = await listLabels();
     const el = document.getElementById('label-list');
@@ -106,7 +127,6 @@ export async function accountPage(stale) {
   };
   renderLabels();
 
-  // Saved investigations
   const renderInv = async () => {
     const list = await listInvestigations();
     const el = document.getElementById('inv-list');

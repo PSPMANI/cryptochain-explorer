@@ -1,4 +1,3 @@
-// Collect publicly labeled wallets of Indian exchanges from Blockscout metadata (Open Labels Initiative).
 const names = ['WazirX', 'CoinDCX', 'CoinSwitch', 'ZebPay', 'Mudrex', 'Giottus', 'Bitbns', 'Unocoin', 'BuyUcoin', 'Pi42', 'Delta Exchange', 'Koinbazar', 'Flitpay', 'Vauld', 'Colodax', 'Bitget India'];
 const hosts = { ethereum: 'eth.blockscout.com', polygon: 'polygon.blockscout.com', base: 'base.blockscout.com', arbitrum: 'arbitrum.blockscout.com', optimism: 'explorer.optimism.io', bsc_none: null };
 const rows = new Map();
@@ -23,10 +22,8 @@ for (const n of names) for (const [chain, h] of Object.entries(hosts)) if (h) ta
 const queue = [...tasks];
 await Promise.all(Array.from({ length: 10 }, async () => { while (queue.length) await queue.shift()(); }));
 const out = [...rows.values()].map(r => ({ a: r.a, q: r.q, tags: [...r.tags], chains: [...r.chains] })).sort((x, y) => x.q.localeCompare(y.q));
-// Classify and write the data module
 const TOKENS = new Set(['0x695106ad73f506f9d0a9650a78019a93149ae07c', '0x19e2a43fbbc643c3b2d9667d858d49cad17bc2b5', '0xab93df617f51e1e415b5b4f8111f122d6b48e55c']);
 const best = tags => {
-  // Prefer a descriptive "Name: Role" tag, then a numbered wallet, then the bare name
   return tags.find(t => /:/.test(t)) || tags.find(t => /\d/.test(t)) || tags[0];
 };
 const entries = [];
@@ -37,12 +34,7 @@ for (const r of out) {
   entries.push([r.a, r.q, exploit ? 'exploit' : 'exchange', exploit ? `⚠ ${label}` : label]);
 }
 const fs = await import('node:fs');
-const body = `// Publicly labeled wallets of India-focused exchanges.
-// Source: Blockscout address metadata (Open Labels Initiative tags), collected ${new Date().toISOString().slice(0, 10)}.
-// EVM addresses, lowercase; they apply on every EVM chain. Token contracts were removed; hack/exploiter wallets
-// are category 'exploit', never 'exchange'. Regenerate with scripts/india-labels.mjs.
-// [address, exchange, category, label]
-export const INDIA_WALLETS = [
+const body = `export const INDIA_WALLETS = [
 ${entries.map(e => '  ' + JSON.stringify(e) + ',').join('\n')}
 ];
 `;

@@ -1,15 +1,9 @@
-// Shared helpers. Pure ES module (no DOM) so adapters can be tested in Node.
-
 export class NotFound extends Error {
   constructor(msg = 'Not found') { super(msg); this.name = 'NotFound'; }
 }
 
 const cache = new Map();
 
-/**
- * fetch + JSON with timeout, one retry on 429/5xx, and optional in-memory TTL cache.
- * Throws NotFound on 404/400/422, Error otherwise.
- */
 export async function fetchJSON(url, { method = 'GET', body, headers, timeout = 15000, ttl = 0 } = {}) {
   const key = ttl ? method + url + (body ? JSON.stringify(body) : '') : null;
   if (key) {
@@ -50,7 +44,6 @@ export async function fetchJSON(url, { method = 'GET', body, headers, timeout = 
   throw lastErr;
 }
 
-/** JSON-RPC 2.0 call. Returns `result`, throws on `error`. */
 export async function rpc(url, method, params = [], opts = {}) {
   const r = await fetchJSON(url, { ...opts, method: 'POST', body: { jsonrpc: '2.0', id: 1, method, params } });
   if (r && r.error) {
@@ -63,7 +56,6 @@ export async function rpc(url, method, params = [], opts = {}) {
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/** Convert an integer amount in base units (string | number | bigint | hex string) to a JS number. */
 export function fromUnits(v, decimals = 18) {
   if (v === null || v === undefined || v === '') return 0;
   if (typeof v === 'number' && !Number.isInteger(v)) return v / 10 ** decimals;
@@ -75,10 +67,9 @@ export function fromUnits(v, decimals = 18) {
   return neg ? -n : n;
 }
 
-/** Parse various timestamp shapes into epoch milliseconds (or null). */
 export function toMs(t) {
   if (t === null || t === undefined || t === '') return null;
-  if (typeof t === 'number') return t < 1e12 ? t * 1000 : t; // seconds vs ms
+  if (typeof t === 'number') return t < 1e12 ? t * 1000 : t;
   if (/^\d+$/.test(t)) return toMs(Number(t));
   const d = Date.parse(t);
   return isNaN(d) ? null : d;

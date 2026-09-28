@@ -1,6 +1,3 @@
-// Import XRPScan's public "well-known names" (api.xrpscan.com/api/v1/names/well-known) into js/data/xrp-names.js:
-// exchanges get category 'exchange' with CryptChain's canonical name; other named services keep their name as an
-// identity label (category 'other'). Accounts are validated. Run: node scripts/xrp-labels.mjs
 import { writeFileSync } from 'node:fs';
 import { fromName } from '../js/entities.js';
 
@@ -20,9 +17,7 @@ for (const x of list) {
   else if (ex && ['fund', 'custodian', 'issuer', 'exploit'].includes(ex.category)) rows.push([a, ex.name, ex.category, label]);
   else rows.push([a, x.name, 'other', label]);
 }
-writeFileSync(new URL('../js/data/xrp-names.js', import.meta.url), `// Named XRP Ledger accounts from XRPScan's public well-known names list, imported ${new Date().toISOString().slice(0, 10)}
-// by scripts/xrp-labels.mjs. [account, name, category, label]
-export const XRP_NAMES = ${JSON.stringify(rows)};
+writeFileSync(new URL('../js/data/xrp-names.js', import.meta.url), `export const XRP_NAMES = ${JSON.stringify(rows)};
 `);
 const ex = rows.filter(r => r[2] === 'exchange');
 const names = {};

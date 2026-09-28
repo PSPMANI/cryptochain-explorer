@@ -1,4 +1,3 @@
-// Esplora / mempool.space API (Bitcoin, Litecoin, and other mempool.space forks).
 import { fetchJSON, fromUnits, NotFound } from '../utils.js';
 
 const TXID = /^[0-9a-fA-F]{64}$/;
@@ -67,7 +66,6 @@ export default function create(chain) {
   async function getTxs(addr, cursor = null) {
     const txs = await fetchJSON(`${api}/address/${addr}/txs${cursor ? '/chain/' + cursor : ''}`);
     const confirmed = txs.filter(t => t.status.confirmed);
-    // Esplora pages 25 confirmed txs at a time (the first page may also include up to 50 mempool txs)
     return {
       items: txs.map(t => summarize(t, addr)),
       next: confirmed.length >= 25 ? confirmed[confirmed.length - 1].txid : null,
@@ -121,7 +119,6 @@ export default function create(chain) {
   return { getAddress, getTxs, getTx, getStats };
 }
 
-// Show readable text in OP_RETURN outputs when it is printable ASCII.
 function decodeOpReturn(script) {
   const hex = script.replace(/^6a(4c..|4d....|..)?/, '');
   const txt = (hex.match(/../g) || []).map(b => String.fromCharCode(parseInt(b, 16))).join('');

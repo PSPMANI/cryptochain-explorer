@@ -1,25 +1,16 @@
-// CryptChain Explorer: router + pages.
-//   #/                        live network dashboard
-//   #/search/<query>          multichain resolution of an ambiguous input
-//   #/<chain>/address/<addr>  address identity + live transactions
-//   #/<chain>/tx/<hash>       transaction details with live confirmations
 import { CHAINS, CHAIN } from './chains.js';
 import { detect } from './detect.js';
 import { getPrices, priceOf } from './prices.js';
-import { knownLabel, entityOf, CATEGORY_LABEL, INDIAN_EXCHANGES, DIRECTORY, loadNonEvmLabels } from './entities.js';
+import { knownLabel, entityOf, INDIAN_EXCHANGES, DIRECTORY, loadLabels } from './entities.js';
 import { poll, stopAll } from './live.js';
 import { LIVE_INTERVAL } from './config.js';
 import { NotFound } from './utils.js';
 import { main, adapter, withTimeout, pool, showError, loading, toast, setQuery } from './core.js';
-import { auth } from './auth.js';
 import { isWatched, addWatch, removeWatch, pushAlerts, unreadAlerts, listLabels, saveLabel, removeLabel } from './store.js';
 import { inspectTx, depositCheck, entityBadge } from './alerts.js';
 import { resolveBridgeTx } from './crosschain.js';
 import { startMonitor } from './monitor.js';
-import { accountPage } from './pages/account.js';
 import { initShell } from './shell.js';
-import { investigatePage } from './pages/investigate.js';
-import { exchangesPage } from './pages/exchanges.js';
 import { mountOutgoing } from './pages/xfers.js';
 import { alertItem, chainLabel } from './pages/shared.js';
 import { liveLabel, prefetchLabels, hasLiveLabels } from './labels-live.js';
@@ -27,7 +18,6 @@ import { usdOf } from './investigate.js';
 import { flag, COUNTRY, setCustomLabels, customLabelOf } from './entities.js';
 import { esc, short, amount, usd, compact, timeCell, identicon, chainDot, chainChip, link, copyBtn, statusChip, dirChip, stat } from './ui.js';
 
-// ---------------------------------------------------------------- routing
 let routeId = 0;
 window.addEventListener('hashchange', route);
 
@@ -43,14 +33,14 @@ async function route() {
   window.scrollTo(0, 0);
   const stale = () => id !== routeId;
   try {
-    if (a && a !== 'account') await loadNonEvmLabels();   // exchange wallets on Solana, Bitcoin, TRON, …
+    if (a && a !== 'account' && a !== 'investigate-start') { loading('Loading…'); await loadLabels(); }
     if (!a) return await homePage(stale);
     if (a === 'search') return await searchPage([b, c].filter(Boolean).join('/'), stale);
-    if (a === 'login') { location.replace('#/account'); return; }       // old links
-    if (a === 'account') return await accountPage(stale);
+    if (a === 'login') { location.replace('#/account'); return; }
+    if (a === 'account') return await (await import('./pages/account.js')).accountPage(stale);
     if (a === 'investigate-start') return investigateStart();
-    if (a === 'investigate') return await investigatePage(b, c, params, stale);
-    if (a === 'exchanges') return await exchangesPage(stale, b || 'all', c || null);
+    if (a === 'investigate') { loading('Opening investigation…'); return await (await import('./pages/investigate.js')).investigatePage(b, c, params, stale); }
+    if (a === 'exchanges') { loading('Loading exchange directory…'); return await (await import('./pages/exchanges.js')).exchangesPage(stale, b || 'all', c || null); }
     if (!CHAIN[a]) return showError(`Unknown network "${a}".`);
     if (b === 'address') return await addressPage(a, c, stale);
     if (b === 'tx') return await txPage(a, c, stale);
@@ -60,11 +50,9 @@ async function route() {
   }
 }
 
-// ---------------------------------------------------------------- search
 function submitSearch(q) {
   q = q.trim();
   if (!q) return;
-  // Typing an exchange / institution name opens its directory page
   const norm = x => x.toLowerCase().replace(/[\s.]/g, '');
   const ex = DIRECTORY.find(e => norm(e.name) === norm(q));
   if (ex) { location.hash = `#/exchanges/${ex.country === 'IN' ? 'india' : 'all'}/${encodeURIComponent(ex.name)}`; return; }
@@ -91,7 +79,6 @@ async function searchPage(q, stale) {
   setQuery(q);
   if (!cands.length) return submitSearch(q);
 
-  // Names (ENS) resolve to an address first, then we search every EVM chain with it.
   const name = cands.find(c => c.kind === 'name');
   if (name) {
     loading(`Resolving ${q}…`);
@@ -145,7 +132,6 @@ async function searchPage(q, stale) {
       const info = await withTimeout(c.kind === 'address' ? a.getAddress(q) : a.getTx(q), 20000);
       if (c.kind === 'address' && !info.active) misses.push(c);
       else {
-        // Tx hashes are unique across chains: jump to the first match without waiting for slower networks
         if (c.kind === 'tx' && !stale()) { routeId++; location.replace(`#/${c.chainId}/tx/${encodeURIComponent(q)}`); return; }
         const p = priceOf(prices, CHAIN[c.chainId]);
         hits.push({ ...c, info, usd: c.kind === 'address' && p ? info.balance * p.usd : null });
@@ -157,14 +143,12 @@ async function searchPage(q, stale) {
     render();
   });
   if (stale()) return;
-  // One clear answer: go straight to it (except EVM addresses, where the multichain overview is the point)
   if (hits.length === 1 && !(isAddr && allEvm)) {
     const h = hits[0];
     location.replace(`#/${h.chainId}/${h.kind}/${encodeURIComponent(h.kind === 'address' ? h.info.address : q)}`);
   }
 }
 
-// ---------------------------------------------------------------- home: live dashboard
 const FILTERS = { all: 'All', evm: 'EVM', utxo: 'Bitcoin-like', other: 'Other L1s', testnet: 'Testnets' };
 let filter = 'all';
 const inFilter = c => filter === 'testnet' ? c.testnet : !c.testnet && (filter === 'all' || (filter === 'other' ? !['evm', 'utxo'].includes(c.family) : c.family === filter));
@@ -245,7 +229,6 @@ async function refreshNets(stale) {
   await pool(visible, 8, async c => {
     const el = document.getElementById('net-' + c.id);
     const state = el.querySelector('.net-state');
-    // Rate-limited free APIs (Blockcypher ~100 req/h) refresh less often
     if (c.statsEvery && Date.now() - (lastStats[c.id] || 0) < c.statsEvery && el.querySelector('.h').textContent !== '—') return;
     lastStats[c.id] = Date.now();
     try {
@@ -272,7 +255,6 @@ function updateLiveCount() {
   if (k) { k.textContent = ok; ks.textContent = `of ${total} live right now`; }
 }
 
-// ---------------------------------------------------------------- investigate: start page
 function investigateStart() {
   document.title = 'Investigate · CryptChain';
   setQuery('');
@@ -300,20 +282,19 @@ function investigateStart() {
   };
 }
 
-// ---------------------------------------------------------------- address page
+const FLOW_CATS = new Set(['exchange', 'bridge', 'fund', 'custodian', 'issuer', 'exploit']);
 async function addressPage(chainId, addr, stale) {
   const chain = CHAIN[chainId];
   const a = await adapter(chainId);
   setQuery(addr);
   loading(`Loading address on ${chain.name}…`);
-  const [info, prices] = await Promise.all([a.getAddress(addr), getPrices(), auth.ready]);
+  const [info, prices] = await Promise.all([a.getAddress(addr), getPrices()]);
   if (stale()) return;
   addr = info.address;
   const known = knownLabel(chain, addr);
   let name = info.name || (known && known.name);
   const labels = [...new Set([...(info.labels || []), ...(known ? known.tags : [])])];
   const price = priceOf(prices, chain);
-  const signedIn = !!auth.user;
   document.title = `${name || short(addr)} · ${chain.name} · CryptChain`;
   addRecent({ chainId, href: location.hash, label: name || short(addr) });
   const plainWallet = /Wallet|SegWit|Legacy|Taproot|P2SH|Address/.test(info.kind);
@@ -335,33 +316,35 @@ async function addressPage(chainId, addr, stale) {
       <div id="label-form" class="label-form" hidden></div>
       <div class="grid" id="astats">${addrStats(info, chain, price)}</div>
     </div>
-    <div class="card" id="conn-card">
-      <div class="section-head"><h2>🔗 Exchange connections</h2><span class="muted small" id="conn-state"></span></div>
-      <p class="muted small">Exchanges and institutions this wallet has sent money to or received money from, including personal deposit addresses (recognized by where they forward funds).</p>
-      <div id="conns"><div class="muted small">Checking counterparties…</div></div>
+    <div class="card" id="tx-card">
+      <div class="section-head"><h2>Transactions</h2><span class="live-badge" title="Checks for new transactions every ${LIVE_INTERVAL.address / 1000}s"><span class="live-dot"></span>LIVE</span>
+        <div class="tabs" id="tx-filter"><button data-f="all" class="active">All</button><button data-f="in">Received</button><button data-f="out">Sent</button><button data-f="ent">Exchanges & bridges</button></div></div>
+      <div class="legend small"><span class="ent ex"><span class="ent-i">🏦</span>Exchange</span><span class="ent br"><span class="ent-i">🌉</span>Bridge</span><span class="ent dx"><span class="ent-i">🔁</span>DEX</span><span class="ent inst"><span class="ent-i">🏢</span>Fund / custodian</span><span class="ent danger"><span class="ent-i">⚠</span>Scam / hacker</span><span class="ent mine"><span class="ent-i">🏷</span>Your label</span><span class="muted">≈ deposit address found by where it forwards funds</span></div>
+      <div class="table-scroll"><table class="txs" data-f="all">
+        <thead><tr><th>Transaction</th><th>Type</th><th>Time</th><th>From</th><th></th><th>To</th><th class="r">Amount</th><th class="r">Fee</th></tr></thead>
+        <tbody id="txs"></tbody></table></div>
+      <div class="more" id="more"></div>
     </div>
+    ${info.tokens && info.tokens.length ? tokenCard(info.tokens) : ''}
     <div class="card" id="xfer-card">
       <div class="section-head"><h2>📤 Outgoing transfers</h2><span class="live-badge" title="Checks for new transfers every few seconds"><span class="live-dot"></span>LIVE</span></div>
       <p class="muted small">Every transfer this wallet sends shows up here with its destination, which is checked automatically: exchange, deposit address, bridge to another chain, or private wallet.</p>
       <div id="xfers" class="xfer-list"></div>
     </div>
+    <div class="side-grid">
+    <div class="card" id="conn-card">
+      <div class="section-head"><h2>🔗 Exchange connections</h2><span class="muted small" id="conn-state"></span></div>
+      <p class="muted small">Exchanges and institutions this wallet has sent money to or received money from, including personal deposit addresses (recognized by where they forward funds).</p>
+      <div id="conns"><div class="muted small">Checking counterparties…</div></div>
+    </div>
     <div class="card" id="alerts-card">
       <div class="section-head"><h2>⚡ Flow alerts</h2><span class="muted small" id="alerts-state"></span></div>
-      <div id="alerts" class="alert-list">${signedIn ? '<div class="muted small">Checking recent transfers for exchanges and bridges…</div>'
-        : ''}</div>
+      <div id="alerts" class="alert-list"><div class="muted small">Checking recent transfers for exchanges and bridges…</div></div>
     </div>
-    ${info.tokens && info.tokens.length ? tokenCard(info.tokens) : ''}
-    <div class="card">
-      <div class="section-head"><h2>Transactions</h2><span class="live-badge" title="Checks for new transactions every ${LIVE_INTERVAL.address / 1000}s"><span class="live-dot"></span>LIVE</span></div>
-      <div class="table-scroll"><table class="txs">
-        <thead><tr><th>Tx hash</th><th>Method</th><th>Age</th><th>From</th><th></th><th>To</th><th class="r">Amount</th><th class="r">Fee</th></tr></thead>
-        <tbody id="txs"></tbody></table></div>
-      <div class="more" id="more"></div>
     </div>`;
 
-  // Watch button
   const watchBtn = document.getElementById('watch-btn');
-  let watched = signedIn ? await isWatched(chainId, addr) : null;
+  let watched = await isWatched(chainId, addr);
   const paintWatch = () => { watchBtn.textContent = watched ? '✓ Watching' : '👁 Watch'; watchBtn.classList.toggle('on', !!watched); };
   paintWatch();
   watchBtn.onclick = async () => {
@@ -370,7 +353,6 @@ async function addressPage(chainId, addr, stale) {
     paintWatch();
   };
 
-  // Custom label: the user's own name for this address (applies everywhere, all EVM networks for EVM addresses)
   const labelChain = chain.family === 'evm' ? 'evm' : chainId;
   const mine = customLabelOf(chain, addr);
   document.getElementById('label-btn').textContent = mine ? '🏷 Edit label' : '🏷 Label';
@@ -396,7 +378,6 @@ async function addressPage(chainId, addr, stale) {
     f.querySelector('#lf-del')?.addEventListener('click', async () => { await removeLabel(cur.id); toast('Label removed'); await reloadLabels(); });
   };
 
-  // Identity from exchange / bridge labels
   const setIdentity = (ent, note) => {
     if (!ent || stale()) return;
     if (!name) { name = ent.label; document.getElementById('id-name').textContent = ent.label; document.title = `${ent.label} · ${chain.name} · CryptChain`; }
@@ -405,16 +386,22 @@ async function addressPage(chainId, addr, stale) {
   };
 
   const tbody = document.getElementById('txs'), more = document.getElementById('more');
+  document.getElementById('tx-filter').onclick = e => {
+    const b = e.target.closest('[data-f]');
+    if (!b) return;
+    document.querySelectorAll('#tx-filter button').forEach(x => x.classList.toggle('active', x === b));
+    tbody.closest('table').dataset.f = b.dataset.f;
+  };
   const rows = new Map();
   const isMe = x => !!x && x.toLowerCase() === addr.toLowerCase();
   const self = () => `<span class="muted">${esc(name || short(addr))}</span>`;
-  const depositEnt = new Map();               // counterparty → entity found by the deposit-address check
+  const depositEnt = new Map();
   const entOf = (p, pEnt, pName) => entityOf(chain, p, pEnt, pName) || (p ? depositEnt.get(p.toLowerCase()) : null) || null;
   const party = (p, pName, pEnt) => {
     const ent = entOf(p, pEnt, pName);
     return `${link(chainId, 'address', p, pName || (ent && ent.label) || null)}${ent && ent.category !== 'other' ? ' ' + entityBadge(ent) : ''}`;
   };
-  const row = t => `<tr data-h="${esc(t.hash)}">
+  const row = t => `<tr data-h="${esc(t.hash)}" data-dir="${esc(t.direction || '')}"${[t.from, t.to].some(p => { const e = p && !isMe(p) && entOf(p, p === t.to ? t.toEntity : t.fromEntity, p === t.to ? t.toName : t.fromName); return e && FLOW_CATS.has(e.category); }) ? ' data-ent="1"' : ''}>
       <td>${link(chainId, 'tx', t.hash)}${t.status === 'failed' ? ' ' + statusChip('failed') : ''}</td>
       <td><span class="chip method" title="${esc(t.method || '')}">${esc(t.method && t.method.length > 22 ? t.method.slice(0, 20) + '…' : t.method || '—')}</span></td>
       <td>${timeCell(t.time)}</td>
@@ -430,11 +417,10 @@ async function addressPage(chainId, addr, stale) {
     return fresh;
   };
 
-  // Alerts panel
   const shown = [];
   const alertsEl = document.getElementById('alerts');
   const showAlerts = (list, { prepend = false } = {}) => {
-    if (!signedIn || stale()) return [];
+    if (stale()) return [];
     const fresh = list.filter(x => !shown.some(s => s.kind === x.kind && s.hash === x.hash));
     if (prepend) shown.unshift(...fresh); else shown.push(...fresh);
     shown.sort((x, y) => (y.time || 0) - (x.time || 0));
@@ -450,7 +436,6 @@ async function addressPage(chainId, addr, stale) {
       const page = await a.getTxs(addr, cursor);
       if (stale()) return;
       if (!cursor) firstPage = page.items;
-      // Networks without a full indexer explain what is (and isn't) covered
       if (page.note && !document.getElementById('hist-note')) {
         tbody.closest('.card').querySelector('.section-head').insertAdjacentHTML('afterend', `<div class="notice" id="hist-note">ℹ ${esc(page.note)}</div>`);
       }
@@ -469,7 +454,6 @@ async function addressPage(chainId, addr, stale) {
   await loadMore();
   if (stale()) return;
 
-  // ---- Who are the counterparties? Label them automatically and summarize exchange connections ----
   const repaint = () => {
     for (const t of rows.values()) {
       const tr = tbody.querySelector(`tr[data-h="${CSS.escape(t.hash)}"]`);
@@ -483,10 +467,9 @@ async function addressPage(chainId, addr, stale) {
     document.getElementById('conn-state').textContent = 'checking counterparties…';
     try {
       const cps = items.flatMap(t => [t.from, t.to]).filter(x => x && !isMe(x));
-      if (hasLiveLabels(chainId)) await prefetchLabels(chainId, cps, 25);           // Bitcoin / TRON exchange tags
+      if (hasLiveLabels(chainId)) await prefetchLabels(chainId, cps, 25);
       if (stale()) return;
       repaint();
-      // Personal deposit addresses: unlabeled destinations that forward their funds into an exchange
       const outs = items.filter(t => t.direction === 'out' && t.to && !isMe(t.to) && !entOf(t.to, t.toEntity, t.toName))
         .sort((a, b) => (b.value || 0) - (a.value || 0));
       const uniq = [...new Map(outs.map(t => [t.to.toLowerCase(), t])).values()].slice(0, 6);
@@ -538,7 +521,6 @@ async function addressPage(chainId, addr, stale) {
   if (historyOk) xfers.update(firstPage, await tokPage(), { initial: true });
   else document.getElementById('xfers').innerHTML = '<div class="muted small">Transfer history is not available for this network without an indexer key.</div>';
 
-  // Who is this wallet? Labels the API attached to it in its own txs, else the deposit-address lookahead.
   const own = firstPage.map(t => isMe(t.from) ? t.fromEntity : isMe(t.to) ? t.toEntity : null).find(Boolean);
   const ownLive = !own && !known && hasLiveLabels(chainId) ? await liveLabel(chainId, addr).catch(() => null) : null;
   if (stale()) return;
@@ -548,8 +530,7 @@ async function addressPage(chainId, addr, stale) {
     depositCheck(chainId, addr).then(dep => dep && setIdentity(dep, `Forwards incoming funds to ${dep.sweepToLabel || dep.name}. This is how exchanges sweep customer deposit addresses.`));
   }
 
-  // Flow alerts for recent activity: labels first (instant), then deeper checks on the latest outgoing transfers
-  if (signedIn && historyOk) {
+  if (historyOk) {
     const state = document.getElementById('alerts-state');
     const quick = (await Promise.all(firstPage.map(t => inspectTx(chainId, addr, t, { deep: false })))).flat();
     showAlerts(quick.filter(x => !x.pending));
@@ -558,11 +539,10 @@ async function addressPage(chainId, addr, stale) {
     state.textContent = deepList.length ? 'checking deposit addresses & bridges…' : '';
     pool(deepList, 2, async t => { showAlerts(await inspectTx(chainId, addr, t).catch(() => [])); })
       .finally(() => { if (!stale()) { state.textContent = ''; if (!shown.length) showAlerts([]); } });
-  } else if (signedIn) {
+  } else {
     showAlerts([]);
   }
 
-  // Real-time: refresh balance + first page; new txs slide in at the top and are inspected immediately.
   poll(async () => {
     const [fresh, page, pr, toks] = await Promise.all([a.getAddress(addr), historyOk ? a.getTxs(addr, null) : { items: [] }, getPrices(), historyOk ? tokPage() : []]);
     if (historyOk) xfers.update(page.items, toks);
@@ -579,7 +559,6 @@ async function addressPage(chainId, addr, stale) {
     added.forEach(t => tbody.querySelector(`tr[data-h="${CSS.escape(t.hash)}"]`)?.classList.add('new'));
     if (!added.length) return;
     enrich(added);
-    if (!signedIn) { toast(`${added.length} new transaction${added.length > 1 ? 's' : ''}`); return; }
     const found = (await Promise.all(added.slice(0, 8).map(t => inspectTx(chainId, addr, t).catch(() => [])))).flat();
     const freshAlerts = showAlerts(found, { prepend: true });
     const top = freshAlerts.find(x => x.level === 'high') || freshAlerts.find(x => x.level === 'medium');
@@ -604,7 +583,6 @@ function tokenCard(tokens) {
     ${tokens.length > 10 ? `<div class="more"><button class="btn ghost" onclick="this.closest('.card').querySelectorAll('tr.extra').forEach(r=>r.hidden=false);this.remove()">Show all ${tokens.length}</button></div>` : ''}</div>`;
 }
 
-// ---------------------------------------------------------------- tx page
 async function txPage(chainId, hash, stale) {
   const chain = CHAIN[chainId];
   const a = await adapter(chainId);
@@ -622,7 +600,6 @@ async function txPage(chainId, hash, stale) {
       .then(() => { if (!stale()) render(); });
   }
 
-  // Where did it go? Bridge indexers tell us the destination chain / tx / recipient.
   const sender = tx.inputs[0] && tx.inputs[0].address;
   const findBridge = async () => {
     const b = await withTimeout(resolveBridgeTx(chainId, tx.hash, sender), 20000).catch(() => null);
@@ -630,7 +607,6 @@ async function txPage(chainId, hash, stale) {
   };
   if (chain.family !== 'utxo') findBridge();
 
-  // Real-time: keep refreshing until the tx is final and any bridge transfer has landed
   const settled = t => t.status !== 'pending' && (t.confirmations == null || t.confirmations >= 100) && (!bridge || bridge.status !== 'pending');
   if (!settled(tx)) {
     const stop = poll(async () => {
@@ -708,20 +684,15 @@ function txView(tx, chain, price, bridge) {
       ${tx.extra.map(x => `<dt>${esc(x.label)}</dt><dd class="break">${esc(x.value)}</dd>`).join('')}</dl></div>` : ''}`;
 }
 
-// ---------------------------------------------------------------- header: account menu + alert bell
-async function renderAccountNav() {
-  await auth.ready;
+function renderAccountNav() {
   const el = document.getElementById('acct');
   const n = unreadAlerts();
   el.innerHTML = `<a class="bell" href="#/account" title="Flow alerts">🔔${n ? `<span class="badge">${n > 99 ? '99+' : n}</span>` : ''}</a>
     <a class="hdr-link small" href="#/account" title="Watchlist, alerts, labels and saved investigations">📋 My workspace</a>`;
 }
-auth.onChange(renderAccountNav);
 const loadMyLabels = async () => { try { setCustomLabels(await listLabels()); } catch { setCustomLabels([]); } };
-auth.onChange(() => loadMyLabels());
 window.addEventListener('alerts-changed', renderAccountNav);
 
-// ---------------------------------------------------------------- misc UI
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-copy]');
   if (!b) return;
@@ -735,11 +706,12 @@ function addRecent(r) {
   try {
     const list = [r, ...getRecent().filter(x => x.href !== r.href)].slice(0, 6);
     localStorage.setItem('recent', JSON.stringify(list));
-  } catch { /* storage unavailable */ }
+  } catch { }
 }
 
 document.getElementById('net-count').textContent = `${CHAINS.filter(c => !c.testnet).length} networks`;
 initShell({ search: submitSearch, recent: getRecent });
 renderAccountNav();
 startMonitor();
-auth.ready.then(loadMyLabels).finally(route);
+loadMyLabels().finally(route);
+(window.requestIdleCallback || (f => setTimeout(f, 1500)))(() => loadLabels());

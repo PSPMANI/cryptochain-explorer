@@ -1,7 +1,3 @@
-// Interactive "follow the money" graph.
-//   • layered columns = hops; edge thickness = value; moving dots show the direction money travels
-//   • click a wallet to expand the next hop, click anything to see its transfers in the side panel
-//   • ▶ Playback replays every transfer in time order; ● Live polls traced wallets for new transfers
 import { CHAIN } from '../chains.js';
 import { Trace } from '../trace.js';
 import { toast } from '../core.js';
@@ -14,12 +10,8 @@ const ICON = { root: '◎', wallet: '👛', exchange: '🏦', bridge: '🌉', de
 const CAT = { exchange: 'exchange', bridge: 'bridge', dex: 'dex', contract: 'other', wallet: 'none', root: 'root', more: 'none' };
 const NODE_W = 206, NODE_H = 62;
 
-/**
- * Mount the trace UI into `el`.
- * opts: { root: { chainId, address, label }, prices, model (analysis of root), bridges, stale }
- */
 export function mountTrace(el, opts) {
-  const fullMode = opts.mode === 'full'; // full money trace: graph of a prebuilt FullTrace, no exploration controls
+  const fullMode = opts.mode === 'full';
   const state = { direction: 'out', depth: 2, minUsd: 0, trace: null, view: null, selected: null, playing: null, live: null, feed: [] };
 
   el.innerHTML = `
@@ -48,9 +40,7 @@ export function mountTrace(el, opts) {
   const statusEl = el.querySelector('#tr-status');
   const setStatus = t => { statusEl.textContent = t; statusEl.hidden = !t; };
 
-  // ------------------------------------------------------------ build / rebuild
   let scheduled = false;
-  // Timer (not requestAnimationFrame) so the graph keeps growing even while the tab is in the background
   const schedule = () => { if (scheduled) return; scheduled = true; setTimeout(() => { scheduled = false; if (canvas.isConnected) render(); }, 400); };
   async function build() {
     stopPlay(); stopLive();
@@ -80,17 +70,14 @@ export function mountTrace(el, opts) {
     }
   }
 
-  // ------------------------------------------------------------ render
   function render() {
     const tr = state.trace;
-    // Full trace: only draw wallets that carried a meaningful share (the rest stay in the totals/table)
     const include = fullMode && tr.minUsd && !(opts.showAll && opts.showAll()) ? n => n.id === tr.rootId || (n.traced || 0) >= tr.minUsd || n.status === 'loading' || (state.path && state.path.has(n.id)) : null;
     const L = tr.layout({ nodeW: NODE_W, nodeH: NODE_H, rowH: 76, colW: 280, include });
     const pad = 40;
-    if (fullMode && !state.userMoved) state.view = null; // keep fitting while the trace grows
+    if (fullMode && !state.userMoved) state.view = null;
     const full = { x: -pad, y: -pad, w: L.width + pad * 2, h: Math.max(L.height, NODE_H) + pad * 2 };
     state.full = full;
-    // Canvas grows with the graph (within limits) so it doesn't need to shrink text to fit
     const cw = canvas.clientWidth || 800;
     canvas.style.height = `${Math.round(Math.min(760, Math.max(420, full.h * Math.min(1, cw / full.w))))}px`;
     if (!state.view) {
@@ -98,7 +85,6 @@ export function mountTrace(el, opts) {
       const fit = Math.min(cw / full.w, ch / full.h);
       if (fit >= 0.72) state.view = { ...full };
       else {
-        // Too big to fit legibly: open at a readable zoom, centered on the investigated wallet
         const s = Math.max(fit, 0.8), w = cw / s, h = ch / s;
         const r = L.pos.get(tr.rootId);
         state.view = { x: Math.max(full.x, Math.min(r.x - w * 0.12, full.x + full.w - w)), y: r.y + NODE_H / 2 - h / 2, w, h };
@@ -126,7 +112,7 @@ export function mountTrace(el, opts) {
           data-tip="${esc(val)}" data-tip-sub="${esc(`${from.label} → ${to.label} · ${e.count} transfer${e.count === 1 ? '' : 's'}`)}">
         <path class="edge-hit" d="${d}" stroke-width="${w + 12}"/>
         <path class="edge-line" d="${d}" stroke-width="${w}"/>
-        ${e.aggregate ? '' : `<path class="edge-flow" d="${d}" stroke-width="${Math.max(2, w * 0.45)}"/>`}
+        ${e.aggregate || !topLabels.has(e.id) ? '' : `<path class="edge-flow" d="${d}" stroke-width="${Math.max(2, w * 0.45)}"/>`}
         ${label}</g>`;
     }).join('');
 
@@ -138,7 +124,6 @@ export function mountTrace(el, opts) {
       const canExpand = !fullMode && (n.kind === 'wallet' || (n.kind === 'bridge' && n.address === null && n.hop > 0 && !n.expanded && [...tr.edges.values()].some(e => e.to === n.id && e.txs.some(t => !t.cross)))) && !n.expanded && n.status !== 'loading';
       const title = (n.entity && n.entity.category === 'exploit' ? '⚠ ' : '') + n.label;
       const lbl = title.length > 26 ? title.slice(0, 25) + '…' : title;
-      // Line 2: network. Line 3: location (exchanges) / role / traced amount
       const cc = n.entity && n.entity.country;
       const where = cc && COUNTRY[cc] ? `${flag(cc)} ${COUNTRY[cc].name}` : '';
       const role = n.kind === 'more' ? n.reason
@@ -173,10 +158,9 @@ export function mountTrace(el, opts) {
     renderTable();
   }
 
-  // ------------------------------------------------------------ side panel
   function renderPanel() {
     const tr = state.trace;
-    if (state.playing) return; // playback owns the panel
+    if (state.playing) return;
     const n = tr.nodes.get(state.selected) || tr.nodes.get(tr.rootId);
     const flowsIn = [...tr.edges.values()].filter(e => e.to === n.id);
     const flowsOut = [...tr.edges.values()].filter(e => e.from === n.id);
@@ -220,7 +204,6 @@ export function mountTrace(el, opts) {
       }).join('') || '<tr><td colspan="7" class="muted">No transfers.</td></tr>'}</tbody></table></div>`;
   }
 
-  // ------------------------------------------------------------ interaction
   el.addEventListener('click', async e => {
     const dirBtn = e.target.closest('[data-dir]');
     if (dirBtn) {
@@ -257,7 +240,6 @@ export function mountTrace(el, opts) {
   el.querySelector('#tr-depth').onchange = e => { state.depth = Number(e.target.value); build(); };
   el.querySelector('#tr-min').onchange = e => { state.minUsd = Number(e.target.value); build(); };
 
-  // pan & zoom
   const zoom = (f, cx, cy) => {
     state.userMoved = true;
     const v = state.view;
@@ -268,7 +250,6 @@ export function mountTrace(el, opts) {
   };
   const toView = (svg, ex, ey) => { const r = svg.getBoundingClientRect(), v = state.view, s = Math.max(v.w / r.width, v.h / r.height);
     return [v.x + (ex - r.left) * s - (r.width * s - v.w) / 2, v.y + (ey - r.top) * s - (r.height * s - v.h) / 2]; };
-  // Wheel over the graph zooms around the pointer (the canvas has a fixed height, so the page still scrolls elsewhere)
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
     const svg = canvas.querySelector('svg');
@@ -295,7 +276,6 @@ export function mountTrace(el, opts) {
   el.querySelector('#tr-zout').onclick = () => zoom(1.25);
   el.querySelector('#tr-fit').onclick = () => { state.userMoved = false; state.view = { ...state.full }; canvas.querySelector('svg').setAttribute('viewBox', `${state.view.x} ${state.view.y} ${state.view.w} ${state.view.h}`); };
 
-  // ------------------------------------------------------------ playback: every transfer in time order
   const playBtn = el.querySelector('#tr-play');
   function stopPlay() {
     if (!state.playing) return;
@@ -340,7 +320,6 @@ export function mountTrace(el, opts) {
     state.playing.timer = setInterval(step, 900);
   };
 
-  // ------------------------------------------------------------ live: poll traced wallets for new transfers
   const liveBtn = el.querySelector('#tr-live');
   function stopLive() {
     if (!state.live) return;
@@ -384,7 +363,6 @@ export function mountTrace(el, opts) {
   return {
     rebuild: build,
     fit() { state.userMoved = false; state.view = null; render(); },
-    /** Highlight one route (list of node ids); pass null to clear. */
     highlightPath(ids) { state.path = ids ? new Set(ids) : null; if (ids) state.selected = ids[ids.length - 1]; render(); },
   };
 }

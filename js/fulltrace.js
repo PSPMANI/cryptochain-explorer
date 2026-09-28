@@ -1,21 +1,5 @@
-// Full money trace: follow ALL of a wallet's outgoing value, hop after hop, until every dollar reaches
-// a final destination. (DOM-free; extends Trace so the graph renderer can draw it.)
-//
-// Model: proportional ("haircut") taint with time ordering. When traced money reaches a wallet, only
-// transfers made AFTER it arrived can carry it on. Each outgoing counterparty gets
-//     share = sent_to_counterparty_after_arrival / max(received_after_arrival, sent_after_arrival)
-// of the traced amount; whatever isn't sent on stays "held". Values are in USD (native coins + stablecoins +
-// API-priced tokens); unpriced tokens can't be weighed and are ignored.
-//
-// Final destinations (finals[].type):
-//   exchange  – reached a labeled exchange (or an address that sweeps into one)   ← money cashed in
-//   bridge    – entered a bridge whose destination couldn't be resolved
-//   dex       – swapped on a DEX          contract – went into a named contract / token / staking
-//   service   – very busy unlabeled wallet (likely an exchange/service we can't name)
-//   held      – still sitting in a wallet  small – amounts below the follow threshold
-//   limit     – not followed because the hop / wallet limit was reached          error – wallet couldn't be loaded
 import { CHAIN } from './chains.js';
-import { withTimeout, adapter } from './core.js';
+import { withTimeout } from './core.js';
 import { collect, analyze, suspiciousToken } from './investigate.js';
 import { resolveBridgeTx } from './crosschain.js';
 import { entityOf } from './entities.js';
@@ -33,12 +17,12 @@ export class FullTrace extends Trace {
     this.maxWallets = maxWallets;
     this.minUsd = minUsd;
     this.perWalletItems = perWalletItems;
-    this.finals = new Map();      // key → { key, type, label, entity, chainId, address, usd, hops, nodeId }
-    this.pending = new Map();     // nodeId → { usd, hop, arrival }
-    this.plans = new Map();       // nodeId → { children: [{ id, ratio, cross }], heldRatio }
+    this.finals = new Map();
+    this.pending = new Map();
+    this.plans = new Map();
     this.expanded = 0;
     this.total = 0;
-    this.parent = new Map();      // nodeId → first parent (for path display)
+    this.parent = new Map();
   }
 
   addFinal(type, usd, { label, entity = null, chainId = null, address = null, hop = 0, nodeId = null }) {
@@ -59,7 +43,6 @@ export class FullTrace extends Trace {
       const kind = !ent ? (name && !/\.(eth|ton|near|sol)$/i.test(name) ? 'contract' : 'wallet')
         : ent.category === 'exploit' ? 'wallet' : TERMINAL[ent.category] ? (ent.category === 'bridge' ? 'bridge' : ent.category === 'exchange' ? 'exchange' : ent.category === 'dex' ? 'dex' : 'contract') : 'wallet';
       n = { id, chainId, address, label: (ent && ent.label) || name || short(address), entity: ent || null, hop, kind, terminal: kind !== 'wallet', status: 'idle', traced: 0 };
-      // Market makers, custodians and stablecoin issuers are institutions: money ends there (reported by name)
       if (ent && ['fund', 'custodian', 'issuer'].includes(ent.category)) { n.kind = 'contract'; n.service = true; n.terminal = true; }
       this.nodes.set(id, n);
     }
@@ -67,7 +50,6 @@ export class FullTrace extends Trace {
     return n;
   }
 
-  /** Send `usd` of traced money from `fromId` into node `to` (a wallet/terminal), recording the edge. */
   flow(fromId, to, usd, hop, tx, cross = null) {
     if (usd <= 0) return;
     const e = this.addEdge(fromId, to.id, { ...tx, usd }, cross).edge;
@@ -76,7 +58,6 @@ export class FullTrace extends Trace {
     this.arrive(to, usd, hop, tx && tx.time);
   }
 
-  /** Traced money lands on a node: terminal → final; expanded → pass on by plan; else queue for expansion. */
   arrive(node, usd, hop, time, replay = false) {
     node.traced = (node.traced || 0) + usd;
     if (!replay && node.id !== this.rootId) {
@@ -109,10 +90,6 @@ export class FullTrace extends Trace {
     this.pending.set(node.id, p);
   }
 
-  /**
-   * Turn a wallet's classified rows into a distribution plan and flow the pending amount through it.
-   * Bridge transfers are resolved to their destination wallet on the other chain when possible.
-   */
   async plan(node, rows, pendingUsd, hop, arrival) {
     const me = node.address.toLowerCase();
     const after = rows.filter(r => r.usdValue > 0 && !suspiciousToken(r) && (!arrival || !r.time || r.time >= arrival - 60000));
@@ -121,7 +98,6 @@ export class FullTrace extends Trace {
     const sent = outs.reduce((s, r) => s + r.usdValue, 0);
     const D = Math.max(received, sent, pendingUsd, 1e-9);
 
-    // Group outgoing value by destination; bridge transfers are resolved per tx
     const groups = new Map();
     const bridgeRows = [];
     for (const r of outs) {
@@ -148,7 +124,7 @@ export class FullTrace extends Trace {
         groups.set(k, g);
       }
     }
-    for (const { r, ent } of bridgeRows.slice(12)) { // too many to resolve individually
+    for (const { r, ent } of bridgeRows.slice(12)) {
       const k = `bridgeend:${ent.name}:${r.chainId}`;
       const g = groups.get(k) || { bridgeEnd: true, chainId: r.chainId, address: r.counterparty, ent, name: ent.label, usd: 0, tx: r };
       g.usd += r.usdValue;
@@ -166,24 +142,19 @@ export class FullTrace extends Trace {
       if (!this.parent.has(child.id)) this.parent.set(child.id, node.id);
     }
     this.plans.set(node.id, plan);
-    // Flow the waiting amount through the plan
-    node.traced = (node.traced || 0) - pendingUsd; // arrive() re-adds it
+    node.traced = (node.traced || 0) - pendingUsd;
     this.arrive(node, pendingUsd, hop, arrival, true);
   }
 
-  /** Run the full trace. rootModel = analysis of the investigated wallet (all collected chains). */
   async run(rootModel, { shouldStop = () => false, onProgress = () => {}, concurrency = 5 } = {}) {
     const root = this.nodes.get(this.rootId);
     root.status = 'done';
-    // Root: every priced outgoing transfer is traced money
     const rows = rootModel.rows.filter(r => r.direction === 'out' && r.usdValue > 0 && !suspiciousToken(r));
     this.total = rows.reduce((s, r) => s + r.usdValue, 0);
     if (!this.minUsd) this.minUsd = Math.max(10, this.total * 0.002);
     root.traced = this.total;
-    // Plan for the root: ratio = value / total, so arrive() distributes exactly the root's outflows
     await this.plan(root, rootModel.rows.filter(r => !r.chainId || true), 0, 0, null);
     const rp = this.plans.get(this.rootId);
-    // Root sends its full outflow (no dilution at the root: we trace what it SENT)
     const sentRoot = rows.reduce((s, r) => s + r.usdValue, 0) || 1;
     for (const c of rp.children) {
       const e = this.edges.get(`${this.rootId}>${c.id}`);
@@ -198,7 +169,6 @@ export class FullTrace extends Trace {
     return this.drain({ shouldStop, onProgress, concurrency });
   }
 
-  /** Continue a finished trace past its limits: money marked "not followed" is traced further. */
   async resume({ maxHops, maxWallets, minUsd, shouldStop = () => false, onProgress = () => {}, concurrency = 5 } = {}) {
     if (maxHops) this.maxHops = maxHops;
     if (maxWallets) this.maxWallets = maxWallets;
@@ -213,11 +183,9 @@ export class FullTrace extends Trace {
     return this.drain({ shouldStop, onProgress, concurrency });
   }
 
-  /** Breadth-first: expand the waiting wallets closest to the root first, until done or a limit is hit. */
   async drain({ shouldStop = () => false, onProgress = () => {}, concurrency = 5 } = {}) {
     onProgress(this.progress());
     while (this.pending.size && !shouldStop()) {
-      // Biggest money first, at any depth: a large flow at hop 5 matters more than dust at hop 1
       const batch = [...this.pending.entries()].filter(([, p]) => p.hop <= this.maxHops).sort((a, b) => b[1].usd - a[1].usd || a[1].hop - b[1].hop);
       if (!batch.length || this.expanded >= this.maxWallets) break;
       const take = batch.slice(0, Math.max(1, Math.min(concurrency, this.maxWallets - this.expanded)));
@@ -235,13 +203,12 @@ export class FullTrace extends Trace {
             await prefetchLabels(node.chainId, outs.map(t => t.to), 15);
           }
           const model = analyze(r.items, node.address, this.prices);
-          // Very busy unlabeled wallet: almost certainly a service / exchange we can't name
           const span = model.totals.last && model.totals.first ? model.totals.last - model.totals.first : Infinity;
           if (r.items.length >= this.perWalletItems * 0.9 && (model.totals.counterparties > 150 || span < 3 * 86400000)) {
             node.kind = 'contract'; node.service = true; node.terminal = true;
             node.reason = `Very busy wallet (${model.totals.counterparties}+ counterparties): likely an exchange or service`;
             node.status = 'done';
-            node.traced = (node.traced || 0) - p.usd; // arrive() re-adds it
+            node.traced = (node.traced || 0) - p.usd;
             this.arrive(node, p.usd, p.hop, p.arrival, true);
           } else {
             node.status = 'done';
@@ -257,7 +224,6 @@ export class FullTrace extends Trace {
         onProgress(this.progress());
       }));
     }
-    // Whatever is still waiting was cut off by the limits (kept resumable)
     for (const [id, p] of this.pending) {
       const n = this.nodes.get(id);
       n.reason = 'Not followed yet: hop or wallet limit reached';
@@ -276,7 +242,6 @@ export class FullTrace extends Trace {
     return { done, total: this.total, settled, pendingUsd, wallets: this.expanded, hop };
   }
 
-  /** Final destinations, biggest first, plus totals per type (they add up to the traced total). */
   summary() {
     const finals = [...this.finals.values()].sort((a, b) => b.usd - a.usd);
     const byType = {};
@@ -288,7 +253,6 @@ export class FullTrace extends Trace {
       exchanges[k].usd += f.usd;
       exchanges[k].wallets++;
     }
-    // Per hop: money arriving (recorded as it moved), wallets reached, where it ended at that hop, and what moved on
     const hops = {};
     const H = h => (hops[h] ||= { hop: h, wallets: 0, arrived: 0, ended: {}, endedTotal: 0 });
     for (const [h, hs] of Object.entries(this.hopStats || {})) { const row = H(Number(h)); row.arrived = hs.usd; row.wallets = hs.ids.size; }
@@ -309,7 +273,6 @@ export class FullTrace extends Trace {
       hops: hopRows, notFollowed, maxHops: this.maxHops, maxWallets: this.maxWallets };
   }
 
-  /** Node ids from the root to `id` (first-seen path). */
   pathTo(id) {
     const path = [id];
     const seen = new Set(path);

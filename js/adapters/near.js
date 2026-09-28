@@ -1,47 +1,36 @@
-// NEAR adapter.
-// chain.api     = NEAR JSON-RPC (https://rpc.mainnet.near.org): balances, chain status.
-// chain.indexer = NearBlocks REST (https://api.nearblocks.io/v1): tx history and tx lookup.
-// NearBlocks allows only ~6 req/min unauthenticated, so every indexer call is one
-// request per page with a short cache, and nothing else is fetched from it.
 
 import { fetchJSON, fromUnits, NotFound } from '../utils.js';
 
 const PAGE = 25;
-const EMPTY_CODE = '11111111111111111111111111111111'; // code_hash of accounts with no contract
+const EMPTY_CODE = '11111111111111111111111111111111';
 
-// Account ids: named (foo.near, a.b.tg, ...), 64-hex implicit, or 0x + 40-hex eth-implicit.
 const NAMED = /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
 const IMPLICIT = /^[0-9a-f]{64}$/;
 const ETH_IMPLICIT = /^0x[0-9a-f]{40}$/;
 const TX_HASH = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
 
-/** NEAR timestamps are nanoseconds (string or number) → epoch ms. */
 const nsToMs = ns => {
   if (ns === null || ns === undefined || ns === '') return null;
   try { return Number(BigInt(String(ns).split('.')[0]) / 1000000n); } catch { return Math.round(Number(ns) / 1e6) || null; }
 };
 
-// Deposits come back as JS numbers in exponent form (1.18e+24); BigInt() rejects that
-// text only if it has a fraction, so round first.
 const toInt = v => (typeof v === 'number' ? BigInt(Math.round(v)).toString() : v);
 
 const actionName = a => {
   if (!a) return null;
   if (a.method) return a.method;
   const n = String(a.action || '').toLowerCase().replace(/_(\w)/g, (_, c) => c.toUpperCase());
-  return n ? n[0].toUpperCase() + n.slice(1) : null; // TRANSFER → Transfer, ADD_KEY → AddKey
+  return n ? n[0].toUpperCase() + n.slice(1) : null;
 };
 
 export default function create(chain) {
   const rpcUrl = chain.api;
   const idx = (chain.indexer || 'https://api.nearblocks.io/v1').replace(/\/$/, '');
   const dec = chain.decimals ?? 24;
-  // Round to 15 significant digits to hide float noise from exponent-form deposits.
   const clean = n => Number(n.toPrecision(15));
   const amt = v => clean(fromUnits(toInt(v ?? 0), dec));
   const fmt = v => `${v.toLocaleString('en-US', { maximumFractionDigits: 6 })} ${chain.symbol}`;
 
-  /** Raw JSON-RPC call that keeps the structured error (utils.rpc only sees `message`). */
   async function nearRpc(method, params, ttl = 0) {
     const r = await fetchJSON(rpcUrl, { method: 'POST', body: { jsonrpc: '2.0', id: 1, method, params }, ttl });
     if (r?.error) {
@@ -66,7 +55,6 @@ export default function create(chain) {
       acc = await nearRpc('query', { request_type: 'view_account', finality: 'final', account_id: id }, 15000);
     } catch (e) {
       if (e.cause === 'UNKNOWN_ACCOUNT' && implicit) {
-        // Implicit accounts exist implicitly; unfunded ones simply have no state yet.
         return {
           address: id, active: false, name: null, labels: [], kind: 'Wallet', balance: 0, txCount: 0,
           stats: [{ label: 'Account type', value: ETH_IMPLICIT.test(id) ? 'Eth-implicit (unfunded)' : 'Implicit (unfunded)' }],
@@ -93,7 +81,7 @@ export default function create(chain) {
       labels: [],
       kind: isContract ? 'Contract' : 'Wallet',
       balance: amt(acc.amount),
-      txCount: null, // count needs an extra NearBlocks call; skipped to respect its rate limit
+      txCount: null,
       stats,
       tokens: [],
     };
@@ -128,7 +116,6 @@ export default function create(chain) {
         method,
       };
     });
-    // NearBlocks returns a cursor even on the last page; stop when the page is short.
     const next = r?.cursor && txns.length >= PAGE ? r.cursor : null;
     return { items, next };
   }
@@ -136,8 +123,6 @@ export default function create(chain) {
   async function getTx(hash) {
     const h = String(hash || '').trim();
     if (!TX_HASH.test(h)) throw new NotFound('Not a valid NEAR transaction hash');
-    // RPC tx lookup needs the sender id, so NearBlocks is the only source here.
-    // The RPC status call (for confirmations) is cheap and not rate-limited like the indexer.
     const [r, status] = await Promise.all([
       fetchJSON(`${idx}/txns/${h}`, { ttl: 30000 }),
       nearRpc('status', [], 5000).catch(() => null),
@@ -152,8 +137,6 @@ export default function create(chain) {
     const deposit = amt(t.actions_agg?.deposit);
     const methods = actions.map(actionName).filter(Boolean);
 
-    // Fungible / NFT token movements from receipts. Each transfer shows up twice
-    // (sender -delta, receiver +delta), so keep only the receiving side.
     const transfers = [];
     for (const rc of t.receipts || []) {
       for (const f of rc.fts || []) {
@@ -162,7 +145,7 @@ export default function create(chain) {
         const decs = meta.decimals ?? 0;
         const amount = clean(Math.abs(d) / 10 ** decs);
         if (d > 0) transfers.push({ from: f.involved_account_id ?? null, to: f.affected_account_id, amount, symbol: meta.symbol || meta.contract || '?' });
-        else if (d < 0 && !f.involved_account_id) transfers.push({ from: f.affected_account_id, to: null, amount, symbol: meta.symbol || meta.contract || '?' }); // burn
+        else if (d < 0 && !f.involved_account_id) transfers.push({ from: f.affected_account_id, to: null, amount, symbol: meta.symbol || meta.contract || '?' });
       }
       for (const n of rc.nfts || []) {
         if (Number(n.delta_amount || 0) > 0) {
@@ -203,7 +186,6 @@ export default function create(chain) {
     const si = status?.sync_info || {};
     const extra = [];
     if (gas?.gas_price) {
-      // gas_price is yoctoNEAR per gas unit; show cost of 1 Tgas.
       extra.push({ label: 'Gas price', value: `${fromUnits(BigInt(gas.gas_price) * 10n ** 12n, dec)} ${chain.symbol}/Tgas` });
     }
     if (status?.protocol_version != null) extra.push({ label: 'Protocol', value: `v${status.protocol_version}` });

@@ -1,13 +1,8 @@
-// Import exchange (CEX) wallet labels for non-EVM chains from Dune Spellbook, the community-maintained
-// label set at github.com/duneanalytics/spellbook (dbt_subprojects/hourly_spellbook/models/_sector/cex/addresses/chains/).
-// Writes js/data/cex-nonevm.js. Every address is validated against its chain's format; exchange names are
-// mapped to CryptChain's canonical names. Run: node scripts/spellbook-labels.mjs
 import { writeFileSync } from 'node:fs';
 import { ENTITIES } from '../js/data/entity-directory.js';
 
 const BASE = 'https://raw.githubusercontent.com/duneanalytics/spellbook/main/dbt_subprojects/hourly_spellbook/models/_sector/cex/addresses/chains/';
 const B58 = '[1-9A-HJ-NP-Za-km-z]';
-// Spellbook chain → [CryptChain chain id, address validator, normalizer]
 const CHAINS = {
   solana: ['solana', new RegExp(`^${B58}{32,44}$`), a => a],
   bitcoin: ['bitcoin', /^(bc1[02-9ac-hj-np-z]{11,87}|[13][1-9A-HJ-NP-Za-km-z]{25,34})$/, a => (/^bc1/i.test(a) ? a.toLowerCase() : a)],
@@ -20,9 +15,8 @@ const CHAINS = {
   cosmos: ['cosmos', /^cosmos1[02-9ac-hj-np-z]{38,58}$/, a => a],
 };
 
-// Canonical names: our directory terms first ("Huobi" → "HTX", "Gate.io" → "Gate", "OKEx" → "OKX")
 const TERM = Object.fromEntries(ENTITIES.map(([term, name]) => [term.toLowerCase(), name]));
-const titled = n => (n === n.toLowerCase() ? n.replace(/(^|\s)\S/g, c => c.toUpperCase()) : n);   // "swissborg" → "Swissborg"
+const titled = n => (n === n.toLowerCase() ? n.replace(/(^|\s)\S/g, c => c.toUpperCase()) : n);
 const canon = n => TERM[n.toLowerCase().replace(/_/g, '.')] || TERM[n.toLowerCase()] || TERM[n.toLowerCase().replace(/\.(com|io|net)$/, '')] || titled(n.replace(/_/g, ' '));
 const ROW = /\(\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'/;
 
@@ -46,17 +40,13 @@ for (const [sb, [chainId, valid, norm]] of Object.entries(CHAINS)) {
   stats.push(`${chainId} ${out[chainId].length}${bad ? ` (${bad} invalid skipped)` : ''}`);
 }
 
-writeFileSync(new URL('../js/data/cex-nonevm.js', import.meta.url), `// Exchange (CEX) wallets on non-EVM chains, from Dune Spellbook's community-maintained CEX address labels
-// (github.com/duneanalytics/spellbook), imported ${new Date().toISOString().slice(0, 10)} by scripts/spellbook-labels.mjs.
-// Addresses validated per chain. { chainId: [[address, exchange, label]] }
-export const CEX_NONEVM = ${JSON.stringify(out)};
+writeFileSync(new URL('../js/data/cex-nonevm.js', import.meta.url), `export const CEX_NONEVM = ${JSON.stringify(out)};
 `);
 console.log(stats.join(' · '));
 const names = {};
 for (const rows of Object.values(out)) for (const r of rows) names[r[1]] = (names[r[1]] || 0) + 1;
 console.log(Object.keys(names).length, 'exchanges:', Object.entries(names).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([k, v]) => `${k} ${v}`).join(' · '));
 
-// EVM exchange wallets (one file for all EVM chains; its rows start with a bare 0x literal)
 {
   const sql = await fetch(`${BASE}cex_evms_addresses.sql`).then(r => r.text());
   const rows = [];
@@ -67,9 +57,7 @@ console.log(Object.keys(names).length, 'exchanges:', Object.entries(names).sort(
     seenEvm.add(a);
     rows.push([a, canon(m[2].trim()), m[3].trim() || m[2].trim()]);
   }
-  writeFileSync(new URL('../js/data/cex-evm-spellbook.js', import.meta.url), `// EVM exchange wallets from Dune Spellbook's cex_evms list (github.com/duneanalytics/spellbook), imported
-// ${new Date().toISOString().slice(0, 10)} by scripts/spellbook-labels.mjs. Apply on every EVM network. [address, exchange, label]
-export const CEX_EVM_SPELLBOOK = ${JSON.stringify(rows)};
+  writeFileSync(new URL('../js/data/cex-evm-spellbook.js', import.meta.url), `export const CEX_EVM_SPELLBOOK = ${JSON.stringify(rows)};
 `);
   console.log(`EVM: ${rows.length} exchange wallets`);
 }

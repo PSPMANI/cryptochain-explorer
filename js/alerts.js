@@ -1,11 +1,3 @@
-// Transaction inspection: where is this money going?
-//   • straight to a labeled exchange wallet            → "Sending to Binance"
-//   • to an unlabeled address that sweeps to an exchange → "Likely Binance deposit address" (1-hop lookahead)
-//   • into a bridge                                    → resolve destination chain + recipient, then check
-//                                                          whether *that* recipient is an exchange
-//   • incoming from an exchange / bridge               → withdrawal / bridged-in notices
-// Alert: { level: 'high' | 'medium' | 'info', kind, title, detail, chainId, hash, address, time,
-//          entity?, bridge?, counterparty? }
 import { CHAIN } from './chains.js';
 import { entityOf, known, CATEGORY_LABEL, flag, COUNTRY } from './entities.js';
 import { resolveBridgeTx, chainName } from './crosschain.js';
@@ -15,13 +7,8 @@ import { amount, short } from './ui.js';
 
 const BRIDGE_METHOD = /^(depositV3|depositV3Now|deposit(ETH|ERC20)(To)?|bridge\w*|outboundTransfer\w*|sendToL2|depositForBurn\w*|transferTokens\w*|wrapAndTransfer\w*|sendFrom|send(OFT|Token)\w*|startBridgeTokens\w*|swapAndStartBridgeTokens\w*|swapAndBridge|initiateWithdrawal|withdrawTo|depositTransaction)$/;
 
-// 1-hop lookahead cache: `${chainId}:${address}` → Promise<entity|null>
 const depositCache = new Map();
 
-/**
- * Is `address` an exchange deposit address? Exchanges give each customer a unique address and
- * periodically sweep it into a labeled hot wallet, so we check where its outgoing txs go.
- */
 export function depositCheck(chainId, address) {
   const key = `${chainId}:${address.toLowerCase()}`;
   if (!depositCache.has(key)) {
@@ -44,12 +31,7 @@ export function depositCheck(chainId, address) {
   return depositCache.get(key);
 }
 
-/**
- * Inspect one transaction summary relative to `address`.
- * opts.deep – allow network lookups (bridge resolution, deposit-address lookahead)
- */
 export async function inspectTx(chainId, address, tx, { deep = true } = {}) {
-  // A token send's "to" is the token contract: inspect each real token recipient instead
   if (tx.direction === 'out' && tx.tokenTransfers && tx.tokenTransfers.length) {
     const each = await Promise.all(tx.tokenTransfers.map(k => inspectTx(chainId, address,
       { ...tx, tokenTransfers: null, to: k.to, toName: k.toName, toEntity: k.toEntity, value: k.value, symbol: k.symbol }, { deep })));
@@ -57,12 +39,9 @@ export async function inspectTx(chainId, address, tx, { deep = true } = {}) {
   }
   const chain = CHAIN[chainId];
   const base = { chainId, hash: tx.hash, address, time: tx.time || Date.now() };
-  // Zero native value usually means a token transfer / contract call; the amount isn't in the summary
-  // Dust (< 1 gwei) is usually address-poisoning spam; treat it like a zero-value call
   const real = tx.value && tx.value >= 1e-9;
   const amt = real ? `${amount(tx.value)} ${tx.symbol || chain.symbol}` : (tx.value ? 'a dust amount' : `a ${tx.method || 'contract'} call`);
   const alerts = [];
-  // Who is the watched wallet itself? (to spot an exchange moving funds between its own wallets)
   const selfEnt = known(chain, address) || (tx.direction === 'out' ? tx.fromEntity : tx.toEntity) || null;
 
   if (tx.direction === 'out' && tx.to) {
@@ -127,12 +106,6 @@ export async function inspectTx(chainId, address, tx, { deep = true } = {}) {
   return alerts;
 }
 
-/**
- * Verify where a transfer is going. Returns
- *   { verdict: 'exchange' | 'deposit' | 'bridge' | 'exploit' | 'dex' | 'contract' | 'wallet',
- *     entity, text, bridge?, final? }   (final = the verified end on the other chain for bridges)
- * `tx` (optional) lets bridge transfers be resolved to their destination chain.
- */
 export async function verifyDestination(chainId, address, { tx = null, hint = null, name = null, from = null } = {}) {
   const chain = CHAIN[chainId];
   const place = e => (e && e.country && COUNTRY[e.country] ? ` · ${flag(e.country)} ${COUNTRY[e.country].name}` : '');
@@ -159,13 +132,15 @@ export async function verifyDestination(chainId, address, { tx = null, hint = nu
   return { verdict: 'wallet', entity: ent, text: ent ? `👤 ${ent.label}: not an exchange` : '👛 Private wallet: not an exchange (checked where it sends its funds)' };
 }
 
-/** Short badge text for a counterparty, used in tx tables. */
+const ENT_ICON = { exchange: '🏦', bridge: '🌉', dex: '🔁', exploit: '⚠', fund: '🏢', custodian: '🏛', issuer: '💵', token: '🪙', staking: '🔒', burn: '🔥', person: '👤', other: '🏷' };
 export function entityBadge(ent) {
   if (!ent) return '';
-  const cls = ent.category === 'exchange' ? 'ex' : ent.category === 'bridge' ? 'br' : ent.category === 'dex' ? 'dx' : ent.category === 'exploit' ? 'danger' : '';
-  const fl = ent.country ? flag(ent.country) + ' ' : '';
-  const title = `${ent.label || ent.name}${ent.country && COUNTRY[ent.country] ? ' · ' + COUNTRY[ent.country].name : ''}`.replace(/"/g, '&quot;');
-  return `<span class="ent ${cls}" title="${title}">${ent.category === 'exploit' ? '⚠ ' : ''}${fl}${ent.inferred ? '≈ ' : ''}${ent.name.replace(/</g, '&lt;')}${ent.category !== 'other' && ent.category !== 'exploit' ? ' · ' + CATEGORY_LABEL[ent.category] : ''}</span>`;
+  const cls = ent.custom ? 'mine' : ent.category === 'exchange' ? 'ex' : ent.category === 'bridge' ? 'br' : ent.category === 'dex' ? 'dx' : ent.category === 'exploit' ? 'danger' : 'inst';
+  const icon = ENT_ICON[ent.category] || '🏷';
+  const fl = ent.country ? ' ' + flag(ent.country) : '';
+  const kind = ent.custom ? 'Your label' : ent.inferred ? `${CATEGORY_LABEL[ent.category] || 'Labeled'} deposit address` : CATEGORY_LABEL[ent.category] || 'Labeled';
+  const title = `${kind}: ${ent.label || ent.name}${ent.country && COUNTRY[ent.country] ? ' · ' + COUNTRY[ent.country].name : ''}`.replace(/"/g, '&quot;');
+  return `<span class="ent ${cls}" title="${title}"><span class="ent-i">${icon}</span>${ent.name.replace(/</g, '&lt;')}${fl}<span class="ent-k">${kind}</span></span>`;
 }
 
 const flagOf = ent => (ent && ent.country ? ' ' + flag(ent.country) : '');

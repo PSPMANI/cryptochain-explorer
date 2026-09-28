@@ -1,4 +1,3 @@
-// App shell: active navigation, live price ticker and the command palette (Ctrl/Cmd+K, "/").
 import { CHAINS, CHAIN } from './chains.js';
 import { detect } from './detect.js';
 import { getPrices, priceOf } from './prices.js';
@@ -24,7 +23,6 @@ export function initShell(o) {
   setInterval(ticker, 60000);
 }
 
-// ---------------------------------------------------------------- active nav
 function markNav() {
   const a = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0];
   const b = location.hash.replace(/^#\/?/, '').split(/[/?]/)[1];
@@ -35,7 +33,6 @@ function markNav() {
   document.querySelectorAll('[data-nav]').forEach(el => el.classList.toggle('active', el.dataset.nav === key));
 }
 
-// ---------------------------------------------------------------- ticker
 async function ticker() {
   const el = document.getElementById('ticker');
   if (!el) return;
@@ -51,11 +48,9 @@ async function ticker() {
     items.push(`<a class="tk" href="#/" title="${esc(c.name)}"><b>${esc(c.symbol)}</b><span>${usd(p.usd)}</span>${chg}</a>`);
   }
   if (!items.length) return;
-  // Duplicated so the CSS marquee loops seamlessly
   el.innerHTML = items.join('') + items.join('');
 }
 
-// ---------------------------------------------------------------- command palette
 function initPalette() {
   const box = document.getElementById('cmdk'), input = document.getElementById('cmdk-q'), list = document.getElementById('cmdk-list');
   if (!box) return;

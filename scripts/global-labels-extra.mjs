@@ -1,7 +1,3 @@
-// Second pass for the largest exchanges: their names are flooded with token contracts in search results,
-// so we search role-specific terms ("Binance: Hot Wallet", "Binance 14", …), merge into js/data/global-wallets.js
-// and apply quality filters to the whole file.
-// Run after scripts/global-labels.mjs:  node scripts/global-labels-extra.mjs
 import { readFileSync, writeFileSync } from 'node:fs';
 import { ENTITIES } from '../js/data/entity-directory.js';
 
@@ -52,9 +48,8 @@ let done = 0;
 const queue = [...tasks];
 await Promise.all(Array.from({ length: 6 }, async () => { while (queue.length) { await queue.shift()(); if (++done % 50 === 0) console.log(`  ${done}/${tasks.length}`); } }));
 
-// Quality filters for the whole data set
-const DROP_ENTITY = new Set(['Rain']);                              // generic word: matched a DeFi protocol and a person
-const DROP_LABEL = /related_level|paxos gold|\bchain\b$/i;          // heuristic "related" guesses, token names, chain names
+const DROP_ENTITY = new Set(['Rain']);
+const DROP_LABEL = /related_level|paxos gold|\bchain\b$/i;
 const best = labels => labels.find(t => /:/.test(t)) || labels.find(t => /\d/.test(t)) || labels[0];
 const entries = [];
 for (const [a, r] of rows) {

@@ -1,14 +1,11 @@
-// XRP Ledger adapter (rippled JSON-RPC, e.g. xrplcluster.com).
-// Note: rippled's JSON-RPC is `{ method, params: [{...}] }`, not JSON-RPC 2.0, so `rpc()` from utils is not used.
 
 import { fetchJSON, fromUnits, NotFound, sleep } from '../utils.js';
 
-const RIPPLE_EPOCH = 946684800; // 2000-01-01T00:00:00Z in unix seconds
+const RIPPLE_EPOCH = 946684800;
 const ADDR_RE = /^r[rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz]{24,34}$/;
 const HASH_RE = /^[0-9A-Fa-f]{64}$/;
 const NOT_FOUND_ERRORS = new Set(['actNotFound', 'actMalformed', 'txnNotFound', 'invalidParams', 'badTxHash', 'notFound', 'lgrNotFound']);
 
-// A few well-known public accounts (exchanges / issuers).
 const LABELS = {
   rEb8TK3gBgk5auZkwc6sHnwrGVJH8DuaLh: ['Binance', 'Exchange'],
   rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B: ['Bitstamp', 'Issuer'],
@@ -30,7 +27,6 @@ function hexToText(h) {
   } catch { return null; }
 }
 
-/** Currency code: 3-char ISO-like, or 40-hex (non-standard; `03...` prefix = AMM LP token). */
 function currencyName(c) {
   if (!c) return '?';
   if (c.length !== 40) return c;
@@ -38,7 +34,6 @@ function currencyName(c) {
   return hexToText(c) || c.slice(0, 8);
 }
 
-/** Amount is a drops string (XRP), an issued-currency object, or an MPT object. */
 function parseAmount(a) {
   if (a === null || a === undefined) return null;
   if (typeof a === 'string' || typeof a === 'number') return { value: drops(a), symbol: 'XRP', xrp: true };
@@ -63,7 +58,6 @@ export default function create(chain) {
 
   const serverInfo = () => call('server_info', {}, { ttl: 4000 }).then(r => r.info || {});
 
-  /** Normalize account_tx entry / tx result (API v1 `tx`+`meta` or v2 `tx_json`+`hash`). */
   function unpack(e) {
     const t = e.tx_json || e.tx || e;
     return {
@@ -80,7 +74,6 @@ export default function create(chain) {
   const txStatus = (meta, validated) =>
     !validated ? 'pending' : meta.TransactionResult === 'tesSUCCESS' ? 'success' : 'failed';
 
-  // Only these tx types carry a meaningful "amount moved" to a destination.
   const AMOUNT_TYPES = new Set(['Payment', 'EscrowCreate', 'CheckCreate', 'CheckCash', 'PaymentChannelCreate', 'PaymentChannelFund']);
 
   function movedAmount(t, meta) {
@@ -97,7 +90,6 @@ export default function create(chain) {
       info = await call('account_info', { account: addr, ledger_index: 'validated' });
     } catch (e) {
       if (e instanceof NotFound && /not found/i.test(e.message)) {
-        // Syntactically valid but unfunded: the account does not exist on-ledger yet.
         return { address: addr, active: false, name: null, labels: LABELS[addr] || [], kind: 'Wallet', balance: 0, txCount: 0, stats: [], tokens: [] };
       }
       throw e;
@@ -110,14 +102,13 @@ export default function create(chain) {
     const base = vl.reserve_base_xrp ?? 1, inc = vl.reserve_inc_xrp ?? 0.2;
     const reserve = +(base + inc * (d.OwnerCount || 0)).toFixed(6);
 
-    // Trust lines (issued tokens). One page is enough for display.
     let tokens = [];
     try {
       const lines = await call('account_lines', { account: addr, ledger_index: 'validated', limit: 200 });
       tokens = (lines.lines || [])
         .map(l => ({ symbol: currencyName(l.currency), name: `Issuer ${short(l.account)}`, balance: Number(l.balance) || 0, contract: l.account }))
         .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
-    } catch { /* trust lines are optional */ }
+    } catch { }
 
     const stats = [
       { label: 'Reserve', value: `${reserve} XRP (${d.OwnerCount || 0} owned objects)` },
@@ -152,7 +143,7 @@ export default function create(chain) {
     try {
       r = await call('account_tx', params);
     } catch (e) {
-      if (e instanceof NotFound && /not found/i.test(e.message)) return { items: [], next: null }; // unfunded
+      if (e instanceof NotFound && /not found/i.test(e.message)) return { items: [], next: null };
       throw e;
     }
     const items = (r.transactions || []).map(e => {

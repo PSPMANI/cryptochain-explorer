@@ -1,5 +1,3 @@
-// Plain EVM JSON-RPC adapter. Balance, contract detection and full tx lookup work on any chain.
-// History needs an indexer: an Etherscan-compatible `chain.historyApi`, or an Etherscan V2 key in config.js.
 import { rpc, fetchJSON, fromUnits, hexToNum, NotFound } from '../utils.js';
 import { ETHERSCAN_API_KEY } from '../config.js';
 import { WATCH_TOKENS } from '../data/watch-tokens.js';
@@ -8,7 +6,6 @@ const EVM_ADDR = /^0x[0-9a-fA-F]{40}$/;
 const EVM_HASH = /^0x[0-9a-fA-F]{64}$/;
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
-// 4-byte selectors of common methods, so txs read "Swap" instead of "0x3593564c".
 const SELECTORS = {
   a9059cbb: 'transfer', '23b872dd': 'transferFrom', '095ea7b3': 'approve', a22cb465: 'setApprovalForAll',
   '42842e0e': 'safeTransferFrom', b88d4fde: 'safeTransferFrom', f242432a: 'safeTransferFrom',
@@ -26,12 +23,11 @@ export const methodName = input => {
   return SELECTORS[sel] || '0x' + sel;
 };
 
-// Decode an ABI `string` (or bytes32) return value from eth_call.
 function decodeString(hex) {
   if (!hex || hex === '0x') return null;
   const h = hex.slice(2);
   try {
-    if (h.length === 64) return new TextDecoder().decode(hexBytes(h)).replace(/\0+$/, '') || null; // bytes32
+    if (h.length === 64) return new TextDecoder().decode(hexBytes(h)).replace(/\0+$/, '') || null;
     const len = parseInt(h.slice(64, 128), 16);
     return new TextDecoder().decode(hexBytes(h.slice(128, 128 + len * 2))) || null;
   } catch { return null; }
@@ -66,14 +62,11 @@ export default function create(chain) {
       address: addr,
       active: balance > 0 || sent > 0 || kind !== 'Wallet',
       name: null, labels: [], kind, balance,
-      txCount: null, // RPC only knows how many txs were *sent* (nonce), shown in stats
+      txCount: null,
       stats, tokens: [],
     };
   }
 
-  // ---- Recent token transfers straight from event logs (networks without a free indexer) ----
-  // Public nodes only allow log queries for named contracts and recent blocks, so we watch the chain's
-  // main stablecoins / wrapped coin (js/data/watch-tokens.js) over the last `logsMaxBack` blocks.
   const watch = WATCH_TOKENS[chain.id] || [];
   const logsCall = (m, p) => rpc(chain.logsRpc || chain.api, m, p);
   const pad = a => '0x' + a.slice(2).toLowerCase().padStart(64, '0');
@@ -100,7 +93,6 @@ export default function create(chain) {
     const logs = [...outs, ...ins].filter(l => l.topics.length === 3);
     const seen = new Set();
     const uniq = logs.filter(l => { const k = l.transactionHash + l.logIndex; return !seen.has(k) && seen.add(k); });
-    // Timestamps: exact for up to 15 blocks, interpolated from those for the rest
     const blocks = [...new Set(uniq.map(l => hexToNum(l.blockNumber)))].sort((a, b) => b - a);
     const exact = new Map(await Promise.all(blocks.slice(0, 15).map(async b => [b, await blockTime(b)])));
     const ref = [...exact.entries()].filter(([, t]) => t);
@@ -117,7 +109,6 @@ export default function create(chain) {
         fee: null, method: 'Token transfer',
       };
     }).sort((a, b) => (b.time || 0) - (a.time || 0) || hexToNum(0));
-    // Busy wallets: keep a page to the newest 100 transfers; the next page resumes below the oldest block shown
     const blockOf = new Map(uniq.map(l => [l.transactionHash, hexToNum(l.blockNumber)]));
     let page = items, nextTo = from > floor ? from - 1 : null;
     if (items.length > 100) {
@@ -167,8 +158,8 @@ export default function create(chain) {
   async function getToken(address) {
     if (!tokenMeta.has(address)) {
       tokenMeta.set(address, Promise.all([
-        call('eth_call', [{ to: address, data: '0x95d89b41' }, 'latest']).then(decodeString).catch(() => null), // symbol()
-        call('eth_call', [{ to: address, data: '0x313ce567' }, 'latest']).then(hexToNum).catch(() => null),   // decimals()
+        call('eth_call', [{ to: address, data: '0x95d89b41' }, 'latest']).then(decodeString).catch(() => null),
+        call('eth_call', [{ to: address, data: '0x313ce567' }, 'latest']).then(hexToNum).catch(() => null),
       ]).then(([symbol, decimals]) => ({ symbol, decimals })));
     }
     return tokenMeta.get(address);
@@ -178,7 +169,6 @@ export default function create(chain) {
     if (!EVM_HASH.test(hash)) throw new NotFound('Invalid tx hash');
     const t = await call('eth_getTransactionByHash', [hash]);
     if (!t) throw new NotFound();
-    // Some public nodes refuse receipts of older txs ("archive" requests); degrade gracefully.
     const [rc, head] = await Promise.all([
       call('eth_getTransactionReceipt', [hash]).catch(() => undefined),
       call('eth_blockNumber', []),
@@ -188,7 +178,6 @@ export default function create(chain) {
     const gasPrice = rc && (rc.effectiveGasPrice || t.gasPrice);
     const fee = rc && gasPrice ? fromUnits(BigInt(rc.gasUsed) * BigInt(gasPrice), chain.decimals) : null;
 
-    // ERC-20 / ERC-721 Transfer events
     const logs = (rc && rc.logs || []).filter(l => l.topics[0] === TRANSFER_TOPIC && l.topics.length >= 3).slice(0, 50);
     const metas = await Promise.all([...new Set(logs.map(l => l.address))].slice(0, 8).map(async a => [a, await getToken(a)]));
     const meta = Object.fromEntries(metas);

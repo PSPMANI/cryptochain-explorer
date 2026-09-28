@@ -1,5 +1,3 @@
-// Polling for real-time views. All pollers stop on navigation (stopAll) and pause while the
-// browser tab is hidden, which keeps the free public APIs happy.
 const pollers = new Set();
 
 export function poll(fn, ms) {
@@ -24,7 +22,6 @@ export function stopAll() {
   pollers.clear();
 }
 
-// Refresh immediately when the tab becomes visible again
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) for (const p of pollers) p.tick();
 });

@@ -1,6 +1,3 @@
-// Haskoin Store API (api.haskoin.com, operated by Blockchain.com): keyless, browser-friendly.
-// Used for Bitcoin Cash. chain.api = 'https://api.haskoin.com/bch'. Addresses in CashAddr form (bitcoincash:q…);
-// legacy 1…/3… input is converted.
 import { fetchJSON, fromUnits, NotFound } from '../utils.js';
 import { legacyToCash } from '../cashaddr.js';
 

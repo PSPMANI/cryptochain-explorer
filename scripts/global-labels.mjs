@@ -1,9 +1,5 @@
-// Collect publicly labeled wallets of international exchanges, market makers, custodians and issuers
-// from Blockscout address metadata (Open Labels Initiative tags), and write js/data/global-wallets.js.
-// Run: node scripts/global-labels.mjs        (takes a few minutes; respects Blockscout with limited concurrency)
 import { writeFileSync } from 'node:fs';
 
-// [search term, canonical name, category, country]  (country = HQ / main regulator, GLOBAL = offshore / multi-entity)
 import { ENTITIES } from '../js/data/entity-directory.js';
 export { ENTITIES };
 
@@ -29,15 +25,15 @@ async function search(host, term) {
   return out;
 }
 
-const rows = new Map(); // address → { name, category, country, labels:Set }
+const rows = new Map();
 const tasks = [];
 for (const [term, name, category, country] of ENTITIES) for (const host of Object.values(HOSTS)) tasks.push(async () => {
   const nameRe = new RegExp(`(^|[^a-z0-9])${escRe(term)}([^a-z0-9]|$)`, 'i');
   for (const i of await search(host, term)) {
     const a = (i.address_hash || i.address || '').toLowerCase();
     const tag = (i.metadata && i.metadata.name) || i.name || '';
-    if (!/^0x[0-9a-f]{40}$/.test(a) || !nameRe.test(tag)) continue;    // tag must really name this entity
-    if (TOKEN_TAG.test(tag) && !EXPLOIT_TAG.test(tag)) continue;       // token contracts are not wallets
+    if (!/^0x[0-9a-f]{40}$/.test(a) || !nameRe.test(tag)) continue;
+    if (TOKEN_TAG.test(tag) && !EXPLOIT_TAG.test(tag)) continue;
     const r = rows.get(a) || { name, category, country, labels: new Set() };
     if (EXPLOIT_TAG.test(tag)) { r.category = 'exploit'; }
     r.labels.add(tag);
@@ -57,11 +53,7 @@ const entries = [...rows.entries()]
 
 const counts = {};
 for (const e of entries) counts[e[1]] = (counts[e[1]] || 0) + 1;
-writeFileSync(new URL('../js/data/global-wallets.js', import.meta.url), `// Publicly labeled wallets of international exchanges, market makers, custodians and stablecoin issuers.
-// Source: Blockscout address metadata (Open Labels Initiative tags), collected ${new Date().toISOString().slice(0, 10)} by scripts/global-labels.mjs.
-// EVM addresses (lowercase) apply on every EVM chain. Token contracts are excluded; hack/exploit wallets are category 'exploit'.
-// [address, entity, category, label, country]
-export const GLOBAL_WALLETS = [
+writeFileSync(new URL('../js/data/global-wallets.js', import.meta.url), `export const GLOBAL_WALLETS = [
 ${entries.map(e => '  ' + JSON.stringify(e) + ',').join('\n')}
 ];
 `);

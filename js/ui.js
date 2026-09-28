@@ -1,4 +1,3 @@
-// Small HTML-string builders and formatters shared by all pages.
 import { CHAIN } from './chains.js';
 import { knownLabel } from './entities.js';
 
@@ -18,7 +17,7 @@ export function usd(x) {
 }
 export const compact = x => x == null ? '—' : Number(x).toLocaleString(undefined, { notation: x >= 1e6 ? 'compact' : 'standard', maximumFractionDigits: 2 });
 
-export function ago(ms) {
+function ago(ms) {
   if (!ms) return 'Pending';
   const s = Math.round((Date.now() - ms) / 1000);
   if (s < 5) return 'just now';
@@ -30,12 +29,10 @@ export function ago(ms) {
 }
 export const timeCell = ms => ms ? `<span class="time" data-t="${ms}" title="${esc(new Date(ms).toLocaleString())}">${ago(ms)}</span>` : '<span class="chip">Pending</span>';
 
-// Refresh every "3 min ago" on the page once per 10 s
 if (typeof document !== 'undefined') {
   setInterval(() => document.querySelectorAll('.time[data-t]').forEach(el => { el.textContent = ago(Number(el.dataset.t)); }), 10000);
 }
 
-// Deterministic 5×5 identicon so every address has a recognizable face
 export function identicon(seed, size = 56) {
   let h = 2166136261;
   for (const c of String(seed).toLowerCase()) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
@@ -51,7 +48,6 @@ export function identicon(seed, size = 56) {
 export const chainDot = chain => `<span class="dot" style="background:${chain.color}"></span>`;
 export const chainChip = chain => `<a class="chip chain" href="#/" style="--c:${chain.color}">${chainDot(chain)}${esc(chain.name)}</a>`;
 
-/** Link to an address/tx page. Label falls back to known identity labels, then a shortened id. */
 export function link(chainId, kind, id, label) {
   if (!id) return `<span class="muted">${esc(label || '—')}</span>`;
   const chain = CHAIN[chainId];

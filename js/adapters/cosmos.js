@@ -1,25 +1,19 @@
-// Cosmos Hub adapter (Cosmos SDK LCD / REST), chain.api e.g. https://cosmos-rest.publicnode.com
-// The LCD has no per-address index, so history is two event searches
-// (message.sender and transfer.recipient) merged and deduped by hash.
 
 import { fetchJSON, fromUnits, toMs, NotFound } from '../utils.js';
 
-const PAGE = 10;  // per event query per page; public nodes get slow (10s+) on bigger pages
+const PAGE = 10;
 const NATIVE = 'uatom';
-const ADDR = /^cosmos1[02-9ac-hj-np-z]{38,58}$/;  // 38 = normal account, 58 = module/ICA/contract
+const ADDR = /^cosmos1[02-9ac-hj-np-z]{38,58}$/;
 const HASH = /^[0-9A-Fa-f]{64}$/;
 
-// ibc/<hash> → { base, symbol, decimals }, shared across adapter instances.
 const ibcCache = new Map();
 
-/** Guess display symbol + decimals from a base denom (uosmo → OSMO/6, aevmos → EVMOS/18). */
 function baseInfo(base) {
   const b = String(base);
-  // Token-factory / CW20 denoms can reuse real names (factory/juno1…/uatom), so tag them.
   if (b.startsWith('factory/')) { const i = baseInfo(b.split('/').pop()); return { ...i, symbol: `f:${i.symbol}` }; }
   if (b.startsWith('cw20:')) return { symbol: `CW20:${b.slice(-6).toUpperCase()}`, decimals: 6 };
   const last = b.split('/').pop();
-  const st = /^st([ua])([a-z]{2,})$/.exec(last); // Stride liquid staking: stuatom → stATOM
+  const st = /^st([ua])([a-z]{2,})$/.exec(last);
   if (st) return { symbol: `st${st[2].toUpperCase()}`, decimals: st[1] === 'a' ? 18 : 6 };
   if (/^u[a-z]{2,}$/.test(last)) return { symbol: last.slice(1).toUpperCase(), decimals: 6 };
   if (/^a[a-z]{3,}$/.test(last)) return { symbol: last.slice(1).toUpperCase(), decimals: 18 };
@@ -27,15 +21,12 @@ function baseInfo(base) {
   return { symbol: last.toUpperCase().slice(0, 12), decimals: 6 };
 }
 
-/** Coin list from a message field that may be an array, a single coin, or missing. */
 const coins = v => (Array.isArray(v) ? v : v && v.denom ? [v] : []);
 
-// Best-effort sender / receiver fields across common message types.
 const fromOf = m => m.from_address || m.sender || m.delegator_address || m.granter || m.depositor || m.voter || m.proposer || m.signer || null;
 const toOf = m => m.to_address || m.receiver || m.validator_dst_address || m.validator_address || m.grantee || m.contract || null;
 const typeName = m => String(m?.['@type'] || '').split('.').pop() || null;
 
-/** Unwrap authz MsgExec so we describe the inner message. */
 const inner = m => (typeName(m) === 'MsgExec' && Array.isArray(m.msgs) && m.msgs.length ? m.msgs[0] : m);
 
 export default function create(chain) {
@@ -50,18 +41,16 @@ export default function create(chain) {
     return a;
   }
 
-  /** Symbol/decimals for any denom, using the IBC cache when available. */
   function denomInfo(denom) {
     if (denom === NATIVE) return { symbol: sym, decimals: dec };
     if (denom.startsWith('ibc/')) {
       const hit = ibcCache.get(denom);
       return hit || { symbol: `IBC/${denom.slice(4, 10)}`, decimals: 6 };
     }
-    if (denom.includes('/')) return { symbol: denom.split('/').pop().slice(0, 16), decimals: 0 }; // e.g. LSM share denoms
+    if (denom.includes('/')) return { symbol: denom.split('/').pop().slice(0, 16), decimals: 0 };
     return baseInfo(denom);
   }
 
-  /** Resolve IBC denom traces (at most `max`, in parallel). Failures leave the fallback symbol. */
   async function resolveIbc(denoms, max = 20) {
     const todo = [...new Set(denoms)].filter(d => d.startsWith('ibc/') && !ibcCache.has(d)).slice(0, max);
     await Promise.all(todo.map(async d => {
@@ -69,7 +58,7 @@ export default function create(chain) {
         const r = await fetchJSON(`${api}/ibc/apps/transfer/v1/denoms/${d.slice(4)}`, { ttl: 86400000, timeout: 8000 });
         const base = r?.denom?.base;
         if (base) ibcCache.set(d, { base, ...baseInfo(base) });
-      } catch { /* keep fallback */ }
+      } catch { }
     }));
   }
 
@@ -80,7 +69,6 @@ export default function create(chain) {
   const nativeSum = list => clean(list.filter(c => c.denom === NATIVE).reduce((s, c) => s + fromUnits(c.amount, dec), 0));
   const feeOf = tx => nativeSum(coins(tx?.auth_info?.fee?.amount));
 
-  /** Sum of native coins transferred to `addr` according to tx events (rewards, IBC receives, ...). */
   function eventReceived(resp, addr) {
     let total = 0;
     for (const ev of resp?.events || []) {
@@ -101,10 +89,8 @@ export default function create(chain) {
     let method = typeName(first);
     if (method && msgs.length > 1) method += ` +${msgs.length - 1}`;
 
-    // Prefer the first message that involves the address; fall back to the first message.
     const m = msgs.map(inner).find(x => fromOf(x) === addr || toOf(x) === addr) || first;
     let from = fromOf(m), to = toOf(m);
-    // Reward withdrawals / undelegations move coins from the validator back to the delegator.
     if (/^Msg(WithdrawDelegatorReward|WithdrawValidatorCommission|Undelegate)$/.test(typeName(m))) {
       [from, to] = [m.validator_address || from, m.delegator_address || to];
     }
@@ -117,7 +103,6 @@ export default function create(chain) {
       const pick = native ? { amount: nativeSum(c), symbol: sym } : coinAmt(c[0]);
       value = pick.amount; symbol = pick.symbol;
     }
-    // Receive-only txs (reward withdrawals, multisends, IBC acks): read the transfer events.
     if ((!value || direction === null) && from !== addr) {
       const got = eventReceived(resp, addr);
       if (got > 0) { value = got; symbol = sym; direction = direction || 'in'; }
@@ -136,7 +121,6 @@ export default function create(chain) {
     };
   }
 
-  /** Tx search; newer SDKs take `query=`, older ones `events=`. */
   async function search(cond, page) {
     const common = `order_by=ORDER_BY_DESC&page=${page}&limit=${PAGE}&pagination.limit=${PAGE}`;
     try {
@@ -168,7 +152,6 @@ export default function create(chain) {
     const staked = clean(dels.reduce((s, d) => s + (d.balance?.denom === NATIVE ? fromUnits(d.balance.amount, dec) : 0), 0));
     const rewards = clean(coins(rew?.total).filter(c => c.denom === NATIVE).reduce((s, c) => s + Number(c.amount || 0), 0) / 10 ** dec);
 
-    // Account type from the auth module (only exists once the address has received funds).
     const acc = auth?.account || null;
     const t = String(acc?.['@type'] || '');
     const kind = /ModuleAccount/.test(t) ? 'Module' : /Vesting/.test(t) ? 'Vesting' : /InterchainAccount/.test(t) ? 'Interchain account' : 'Wallet';
@@ -189,21 +172,15 @@ export default function create(chain) {
       labels: kind === 'Module' ? ['Module account'] : [],
       kind,
       balance,
-      txCount: null, // the LCD has no cheap per-address count
+      txCount: null,
       stats,
       tokens,
     };
   }
 
-  /**
-   * Cursor = page number. Each page runs the sender and recipient searches for the
-   * same page, merges them by hash and sorts by height. Ordering across page
-   * boundaries is approximate because the two result sets advance independently.
-   */
   async function getTxs(address, cursor = null) {
     const a = checkAddress(address);
     const page = Number(cursor) || 1;
-    // Event searches on busy public nodes can be slow or time out; show whichever half succeeds.
     const res = await Promise.allSettled([
       search(`message.sender='${a}'`, page),
       search(`transfer.recipient='${a}'`, page),
@@ -250,7 +227,6 @@ export default function create(chain) {
         transfers.push({ from, to, amount, symbol });
       }
     }
-    // Multi-message txs repeat the signer; keep one input row per address.
     const seen = new Set();
     const uniqInputs = inputs.filter(i => (seen.has(i.address) && i.value == null ? false : (seen.add(i.address), true)));
 

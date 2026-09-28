@@ -9,6 +9,8 @@ address's public identity, balance, tokens and transactions, updating live.
 - **Identity**: ENS / .ton / NEAR names, contract names, public labels (exchanges, bridges, tokens) and scam flags
 - **Real time**: live dashboard of every network (block height, gas/fees, price), live transaction feed on address pages, live confirmations on tx pages
 - **No backend, no API keys**: a static site that calls free public APIs straight from the visitor's browser
+- **Private by design**: no accounts and no server database. Each visitor's searches, watchlist, alerts, labels and saved investigations stay in their own browser; other visitors never see them. My workspace → 🗑 Clear all my data removes everything
+- **Fast**: the page shell loads about 145 KB of code; the 1.7 MB label database and the investigation tools load in the background or only when opened
 
 ### 📄 Report (Investigate → 📄 Report)
 
@@ -170,7 +172,7 @@ js/shell.js           navigation state, price ticker, command palette
 js/app.js             router and pages: dashboard, search, address, tx
 js/chains.js          chain registry (add networks here)
 js/detect.js          input → candidate chains
-js/adapters/*.js      one module per API family, all returning the same shapes (see SPEC.md)
+js/adapters/*.js      one module per API family, all returning the same shapes
 js/entities.js        who's behind an address: exchange / bridge / DEX labels (API tags + curated list)
 js/alerts.js          transaction inspection: exchange deposits, deposit-address lookahead, bridge resolution
 js/crosschain.js      Across / LayerZero / Wormhole bridge indexers → normalized cross-chain transfers
@@ -186,15 +188,15 @@ js/config.js          optional Etherscan key, refresh intervals
 ### Add a network
 
 1. If an existing adapter fits (Blockscout instance, EVM RPC, Esplora, Blockcypher, …), add one entry to `js/chains.js`.
-2. Otherwise write `js/adapters/<name>.js` following [`js/adapters/SPEC.md`](js/adapters/SPEC.md), and add its address and tx formats to `js/detect.js`.
+2. Otherwise write `js/adapters/<name>.js` modeled on an existing one (it must export `getAddress`, `getTxs`, `getTx` and `getStats`), and add its address and tx formats to `js/detect.js`.
 
 ### Network coverage for history, alerts and investigations
 
 | Coverage | Networks |
 |---|---|
-| Full history + public labels (Blockscout) | Ethereum, Base, Arbitrum, OP, Polygon, zkSync, Unichain, Celo, World Chain, Soneium, Ink, Mode, Lisk, Manta, Immutable, Rootstock, Flare, **Gnosis**, **Scroll**, LUKSO, Sepolia |
+| Full history + public labels (Blockscout) | Ethereum, Base, Arbitrum, OP, Polygon, zkSync, Unichain, Celo, World Chain, Soneium, Ink, Mode, Lisk, Manta, Immutable, Rootstock, Flare, LUKSO, Sepolia |
 | Full history (Routescan, keyless) | Avalanche, **Blast**, **Mantle**, **Metis** |
-| Recent stablecoin / wrapped-coin transfers read from chain logs (last ~9,000 blocks) | **BNB Chain**, opBNB, Linea, Sonic, Berachain, Cronos, Sei, Taiko, Kava, HyperEVM, Zora |
+| Recent stablecoin / wrapped-coin transfers read from chain logs (last ~9,000 blocks) | **BNB Chain**, opBNB, Linea, **Gnosis**, **Scroll**, Sonic, Berachain, Cronos, Sei, Taiko, Kava, HyperEVM, Zora |
 | Full history (own adapters) | Bitcoin, Litecoin, Dogecoin, Dash, Bitcoin Cash, Solana, TRON, XRP, TON, NEAR, Aptos, Sui, Cosmos |
 
 The watched tokens for the log-based networks are verified on-chain and listed in `js/data/watch-tokens.js`. An Etherscan V2
@@ -213,3 +215,7 @@ Blockscout · mempool.space · Blockcypher · Blockchair · Routescan · PublicN
 XRPL Cluster · Toncenter · NEAR RPC & NearBlocks · Aptos Labs · Sui RPC · Cosmos REST · CoinGecko
 
 All data is public blockchain data. Blockchains don't record real names; "identity" means publicly known labels only.
+
+---
+
+Created by **Manikanta**.

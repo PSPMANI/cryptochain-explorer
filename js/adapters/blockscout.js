@@ -1,4 +1,3 @@
-// Blockscout v2 API: full EVM indexer with ENS names, public tags, tokens and history.
 import { fetchJSON, fromUnits, toMs, NotFound } from '../utils.js';
 import { fromBlockscout } from '../entities.js';
 
@@ -17,7 +16,6 @@ export default function create(chain) {
       a = await fetchJSON(`${api}/addresses/${addr}`);
     } catch (e) {
       if (!(e instanceof NotFound)) throw e;
-      // Valid address the indexer has never seen: unused on this chain.
       return { address: addr, active: false, name: null, labels: [], kind: 'Wallet', balance: 0, txCount: 0, stats: [], tokens: [] };
     }
     const [counters, tokens] = await Promise.all([
@@ -54,7 +52,6 @@ export default function create(chain) {
       labels,
       kind,
       balance: fromUnits(a.coin_balance, chain.decimals),
-      // Some Blockscout instances report 0 while counters are still being computed.
       txCount: Number(counters.transactions_count) > 0 ? Number(counters.transactions_count) : null,
       stats,
       tokens: (tokens.items || [])
@@ -70,17 +67,12 @@ export default function create(chain) {
     };
   }
 
-  // Token metadata (symbol / decimals) for decoding pending token transfers, cached per contract
   const tokenMeta = new Map();
   const tokenInfo = contract => {
     if (!tokenMeta.has(contract)) tokenMeta.set(contract, fetchJSON(`${api}/tokens/${contract}`, { ttl: 3600000 }).catch(() => null));
     return tokenMeta.get(contract);
   };
 
-  /**
-   * Where the tokens in a tx actually went (the tx's "to" is only the token contract):
-   * confirmed txs carry token_transfers; pending ones are decoded from transfer / transferFrom calldata.
-   */
   async function tokenMoves(t, me) {
     if (Array.isArray(t.token_transfers) && t.token_transfers.length) {
       return t.token_transfers.filter(x => x.from && x.from.hash.toLowerCase() === me && x.to).map(x => {
@@ -129,7 +121,6 @@ export default function create(chain) {
     };
   }
 
-  // Optional adapter extension used by investigations: ERC-20/721/1155 transfers as TxSummary items.
   async function getTokenTransfers(addr, cursor = null) {
     const qs = cursor ? '?' + new URLSearchParams(cursor) : '';
     const page = await fetchJSON(`${api}/addresses/${addr}/token-transfers${qs}`);
@@ -208,7 +199,6 @@ export default function create(chain) {
     return { height: s.total_blocks ? Number(s.total_blocks) : null, extra };
   }
 
-  // ENS / name-service lookup (used for `vitalik.eth`-style input)
   async function resolveName(name) {
     const res = await fetchJSON(`${api}/search/quick?q=${encodeURIComponent(name)}`);
     const list = Array.isArray(res) ? res : res.items || [];

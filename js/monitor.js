@@ -1,10 +1,7 @@
-// Background watchlist monitor for signed-in users. Runs across page navigation while the site is open:
-// checks each watched wallet for new transactions, inspects them (exchange / bridge / deposit address),
-// stores alerts, and notifies via toast + browser notification.
-import { auth } from './auth.js';
 import { listWatch, pushAlerts } from './store.js';
 import { adapter, withTimeout, toast } from './core.js';
 import { inspectTx } from './alerts.js';
+import { loadLabels } from './entities.js';
 import { CHAIN } from './chains.js';
 import { amount } from './ui.js';
 import { LIVE_INTERVAL } from './config.js';
@@ -12,25 +9,25 @@ import { LIVE_INTERVAL } from './config.js';
 let timer = null, running = false;
 const SEEN = 'cc_seen_';
 
-const seenKey = (w) => `${SEEN}${auth.user.id}_${w.chain_id}_${w.address.toLowerCase()}`;
+const seenKey = (w) => `${SEEN}local_${w.chain_id}_${w.address.toLowerCase()}`;
 const loadSeen = k => { try { const v = localStorage.getItem(k); return v ? new Set(JSON.parse(v)) : null; } catch { return null; } };
-const saveSeen = (k, set) => { try { localStorage.setItem(k, JSON.stringify([...set].slice(-300))); } catch { /* ignore */ } };
+const saveSeen = (k, set) => { try { localStorage.setItem(k, JSON.stringify([...set].slice(-300))); } catch { } };
 
 export function startMonitor() {
-  auth.onChange(u => { stop(); if (u) schedule(3000); });
-  auth.ready.then(() => { if (auth.user) schedule(3000); });
+  schedule(3000);
 }
 function stop() { clearTimeout(timer); timer = null; }
 function schedule(ms) { stop(); timer = setTimeout(tick, ms); }
 
 async function tick() {
-  if (!auth.user || running) return schedule(LIVE_INTERVAL.watchlist);
+  if (running) return schedule(LIVE_INTERVAL.watchlist);
   if (document.hidden) return schedule(5000);
   running = true;
   try {
+    await loadLabels();
     const list = (await listWatch()).slice(0, 20);
     for (const w of list) {
-      if (!auth.user || !CHAIN[w.chain_id]) break;
+      if (!CHAIN[w.chain_id]) continue;
       await checkWallet(w).catch(e => console.warn('watch check failed', w.address, e.message));
     }
   } finally {
@@ -39,8 +36,7 @@ async function tick() {
   }
 }
 
-/** Check one watched wallet. First run only records a baseline, so old txs never alert. */
-export async function checkWallet(w) {
+async function checkWallet(w) {
   const a = await adapter(w.chain_id);
   const page = await withTimeout(a.getTxs(w.address), 30000);
   const key = seenKey(w);
@@ -52,7 +48,6 @@ export async function checkWallet(w) {
   hashes.forEach(h => seen.add(h));
   saveSeen(key, seen);
 
-  // Exchange / bridge findings become individual alerts; plain activity is summarized in one alert per check
   const alerts = [];
   const plain = [];
   for (const t of fresh.slice(0, 10)) {
@@ -83,7 +78,7 @@ function notify(alerts) {
       try {
         const n = new Notification(a.title, { body: a.detail || '', tag: a.kind + a.hash });
         n.onclick = () => { window.focus(); location.hash = `#/${a.chainId}/tx/${a.hash}`; };
-      } catch { /* some browsers only allow notifications from a service worker */ }
+      } catch { }
     }
   }
 }

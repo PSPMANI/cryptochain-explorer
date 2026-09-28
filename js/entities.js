@@ -1,10 +1,4 @@
-// Who is behind an address? Turns API labels and a curated list into a normalized entity:
-//   { name: 'Binance', category: 'exchange' | 'bridge' | 'dex' | 'token' | 'burn' | 'staking' | 'person' | 'other', label: 'Binance: Hot Wallet' }
-// Sources, in priority order: Blockscout metadata tags (Open Labels Initiative), the curated list
-// below, then keyword matching on contract/label names.
 
-import { INDIA_WALLETS } from './data/india-wallets.js';
-import { GLOBAL_WALLETS } from './data/global-wallets.js';
 import { ENTITIES } from './data/entity-directory.js';
 import { peekLive } from './labels-live.js';
 import { legacyToCash } from './cashaddr.js';
@@ -15,10 +9,7 @@ export const CATEGORY_LABEL = {
   issuer: 'Stablecoin issuer', other: 'Labeled',
 };
 
-// Exchange directory. `country: 'IN'` marks India-based / India-focused exchanges (shown with 🇮🇳).
-// `labeled` = we have publicly labeled wallets for it (js/data/india-wallets.js); the others are still
-// recognised whenever an API label mentions them, and by the deposit-address lookahead.
-export const EXCHANGES = {
+const EXCHANGES = {
   WazirX: { country: 'IN', site: 'wazirx.com', note: 'Hacked July 2024 (~$230M); exploiter wallets are flagged separately' },
   CoinDCX: { country: 'IN', site: 'coindcx.com' },
   CoinSwitch: { country: 'IN', site: 'coinswitch.co', aka: ['CoinSwitch Kuber'] },
@@ -37,13 +28,10 @@ export const EXCHANGES = {
 };
 export const INDIAN_EXCHANGES = Object.keys(EXCHANGES).filter(k => EXCHANGES[k].country === 'IN');
 
-// Where global exchanges are headquartered / primarily regulated. 'GLOBAL' = no single home jurisdiction
-// (offshore / multi-entity). This is the exchange's location, never the location of a wallet's owner.
 const GLOBAL_LOCATION = { GateHub: 'GLOBAL' };
-const ENTITY_CATEGORY = {};                    // canonical name → 'exchange' | 'fund' | 'custodian' | 'issuer'
+const ENTITY_CATEGORY = {};
 for (const [, name, category, country] of ENTITIES) { GLOBAL_LOCATION[name] ??= country; ENTITY_CATEGORY[name] ??= category; }
 for (const n of Object.keys(EXCHANGES)) ENTITY_CATEGORY[n] = 'exchange';
-/** Every named entity CryptChain knows: [{ name, category, country, india }] */
 export const DIRECTORY = [
   ...Object.entries(EXCHANGES).map(([name, x]) => ({ name, category: 'exchange', country: x.country, site: x.site, note: x.note })),
   ...[...new Map(ENTITIES.map(([, name, category, country]) => [name, { name, category, country }])).values()],
@@ -59,11 +47,9 @@ export const COUNTRY = {
   TH: { name: 'Thailand', lat: 15, lon: 101 }, AU: { name: 'Australia', lat: -25, lon: 134 }, BH: { name: 'Bahrain', lat: 26, lon: 50.5 },
   GLOBAL: { name: 'Global / offshore', lat: null, lon: null },
 };
-/** Emoji flag for a country code (🌐 for GLOBAL). */
 export const flag = cc => !cc ? '' : cc === 'GLOBAL' ? '🌐' : String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
-export const placeOf = cc => (cc && COUNTRY[cc] ? `${flag(cc)} ${COUNTRY[cc].name}` : '');
+const placeOf = cc => (cc && COUNTRY[cc] ? `${flag(cc)} ${COUNTRY[cc].name}` : '');
 
-// Curated, publicly documented addresses. EVM keys are lowercase and apply to every EVM chain.
 const E = (name, category, label = name) => ({ name, category, label });
 const EVM = {
   '0x0000000000000000000000000000000000000000': E('Null address', 'burn'),
@@ -82,7 +68,6 @@ const EVM = {
   '0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad': E('Uniswap', 'dex', 'Uniswap Universal Router'),
   '0x7a250d5630b4cf539739df2c5dacb4c659f2488d': E('Uniswap', 'dex', 'Uniswap V2 Router'),
   '0xe592427a0aece92de3edee1f18e0157c05861564': E('Uniswap', 'dex', 'Uniswap V3 Router'),
-  // Bridges (official L2 bridges on Ethereum, OP-stack/Arbitrum system contracts on L2s, Across spoke pools)
   '0x4dbd4fc535ac27206064b68ffcf827b0a60bab3f': E('Arbitrum Bridge', 'bridge', 'Arbitrum One: Delayed Inbox'),
   '0x72ce9c846789fdb6fc1f34ac4ad25dd9ef7031ef': E('Arbitrum Bridge', 'bridge', 'Arbitrum: L1 Gateway Router'),
   '0x99c9fc46f92e8a1c0dec1b1747d010903e884be1': E('Optimism Bridge', 'bridge', 'OP Mainnet: L1 Standard Bridge'),
@@ -116,31 +101,16 @@ const OTHER = {
   },
 };
 
-// Curated wallets of Indian exchanges (lowercase EVM addresses)
-for (const [addr, name, category, label] of GLOBAL_WALLETS) {
-  const country = countryOf(name);
-  if (!EVM[addr]) EVM[addr] = category === 'exploit'
-    ? { name: `${name} exploiter`, category: 'exploit', label, country }
-    : { name, category, label, country };
-}
-for (const [addr, name, category, rawLabel] of INDIA_WALLETS) {
-  const label = rawLabel.replace(/^⚠\s*/, '');
-  if (!EVM[addr]) EVM[addr] = category === 'exploit'
-    ? { name: `${name} exploiter`, category: 'exploit', label, country: 'IN' }
-    : { name, category, label, country: 'IN' };
-}
 
 const GLOBAL_EXCHANGES = ['Binance', 'Revolut', 'Coinbase', 'Kraken', 'OKX', 'Bybit', 'Bitfinex', 'KuCoin', 'Gate', 'HTX', 'Huobi', 'Gemini',
   'Crypto.com', 'Bitstamp', 'Upbit', 'Bithumb', 'MEXC', 'Bitget', 'Robinhood', 'Bitvavo', 'Poloniex', 'HitBTC', 'Deribit', 'WhiteBIT', 'GateHub'];
-// Generic words are only recognized through their exact labeled wallets, never by name, to avoid false matches
 const NO_NAME_MATCH = new Set(['Rain', 'Copper', 'Circle', 'Tether', 'Paxos', 'Gate', 'Bullish', 'Backpack', 'GSR', 'Anchorage', 'Anchorage Digital', 'Luno', 'MAX', 'Cumberland', 'Galaxy Digital', 'Flow Traders']);
 const TERM_TO_NAME = Object.fromEntries(ENTITIES.map(([term, name]) => [term.toLowerCase(), name]));
 const ALL_EXCHANGE_NAMES = [...new Set([...GLOBAL_EXCHANGES, ...Object.keys(EXCHANGES), ...Object.values(EXCHANGES).flatMap(e => e.aka || []), ...ENTITIES.flatMap(([term, name]) => [term, name])])]
   .filter(n => !NO_NAME_MATCH.has(n))
-  .sort((a, b) => b.length - a.length); // longest first so "Delta Exchange" wins over shorter matches
+  .sort((a, b) => b.length - a.length);
 const EXCHANGE_RE = new RegExp(`\\b(${ALL_EXCHANGE_NAMES.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}|OKEx)\\b`, 'i');
 const EXPLOIT_RE = /exploit|hacker|drainer|phish|heist|stolen/i;
-// Canonical spelling for a matched exchange name ("coindcx" → "CoinDCX", "CoinSwitch Kuber" → "CoinSwitch")
 const canonicalExchange = m => {
   const hit = ALL_EXCHANGE_NAMES.find(x => x.toLowerCase() === m.toLowerCase());
   const parent = Object.keys(EXCHANGES).find(k => (EXCHANGES[k].aka || []).some(a => a.toLowerCase() === m.toLowerCase()));
@@ -149,7 +119,6 @@ const canonicalExchange = m => {
 const BRIDGE_RE = /bridge|spoke ?pool|portal|inbox|messenger|gateway router|stargate|wormhole|layerzero|tokenmessenger|cctp|\bhop\b|synapse|celer|debridge|orbiter|relay\.link|relayreceiver|axelar|allbridge|multichain|lifi|li\.fi|socket|bungee|squid|rango|mayan|symbiosis|rhino|owlto|butter|meson/i;
 const DEX_RE = /uniswap|sushiswap|pancakeswap|curve|balancer|1inch|0x: exchange|paraswap|cowswap|aerodrome|velodrome|jupiter|raydium|router/i;
 
-/** From a Blockscout party object ({ hash, name, ens_domain_name, metadata: { tags } }). */
 export function fromBlockscout(p) {
   if (!p) return null;
   const tags = (p.metadata && p.metadata.tags) || [];
@@ -162,7 +131,7 @@ export function fromBlockscout(p) {
     : generic.some(g => /bridge/.test(g)) ? 'bridge'
     : generic.some(g => /dex|amm/.test(g)) ? 'dex' : null;
   const guessed = label ? fromName(label) : null;
-  if (guessed && guessed.category === 'exploit') return guessed; // "WazirX Exploiter" is not WazirX
+  if (guessed && guessed.category === 'exploit') return guessed;
   if (!category && guessed) category = guessed.category;
   if (!category && !label) return null;
   const name = category === 'exchange' && guessed && guessed.category === 'exchange' ? guessed.name
@@ -170,7 +139,6 @@ export function fromBlockscout(p) {
   return { name, category: category || 'other', label: label || main, country: countryOf(name) };
 }
 
-/** Keyword guess from a contract / label name. */
 export function fromName(name) {
   if (!name) return null;
   const ex = name.match(EXCHANGE_RE);
@@ -182,12 +150,17 @@ export function fromName(name) {
   return null;
 }
 
-// Exchange wallets on non-EVM chains (Solana, Bitcoin, Litecoin, XRP, TRON, Aptos, NEAR) from Dune Spellbook.
-// Loaded in the background on first use so the first page stays light.
 let nonEvmLoading = null;
-export function loadNonEvmLabels() {
-  return nonEvmLoading ||= Promise.all([import('./data/cex-nonevm.js'), import('./data/xrp-names.js'), import('./data/ton-names.js'), import('./data/cex-reserves.js'), import('./data/cex-evm-spellbook.js'), import('./data/extra-labels.js')]).then(async ([{ CEX_NONEVM }, { XRP_NAMES }, { TON_NAMES }, { CEX_RESERVES }, { CEX_EVM_SPELLBOOK }, { EXTRA_LABELS }]) => {
-    // Official Aptos Explorer + Tonkeeper named accounts (exchanges and other identities)
+export function loadLabels() {
+  return nonEvmLoading ||= Promise.all([import('./data/global-wallets.js'), import('./data/india-wallets.js'), import('./data/cex-nonevm.js'), import('./data/xrp-names.js'), import('./data/ton-names.js'), import('./data/cex-reserves.js'), import('./data/cex-evm-spellbook.js'), import('./data/extra-labels.js')]).then(async ([{ GLOBAL_WALLETS }, { INDIA_WALLETS }, { CEX_NONEVM }, { XRP_NAMES }, { TON_NAMES }, { CEX_RESERVES }, { CEX_EVM_SPELLBOOK }, { EXTRA_LABELS }]) => {
+    for (const [addr, name, category, label] of GLOBAL_WALLETS) {
+      const country = countryOf(name);
+      if (!EVM[addr]) EVM[addr] = category === 'exploit' ? { name: `${name} exploiter`, category: 'exploit', label, country } : { name, category, label, country };
+    }
+    for (const [addr, name, category, rawLabel] of INDIA_WALLETS) {
+      const label = rawLabel.replace(/^⚠\s*/, '');
+      if (!EVM[addr]) EVM[addr] = category === 'exploit' ? { name: `${name} exploiter`, category: 'exploit', label, country: 'IN' } : { name, category, label, country: 'IN' };
+    }
     for (const [chainId, rows] of Object.entries(EXTRA_LABELS)) {
       const m = (OTHER[chainId] ||= {});
       for (const [a, name, category, label] of rows) {
@@ -196,9 +169,7 @@ export function loadNonEvmLabels() {
       }
     }
     const extraEx = c => (EXTRA_LABELS[c] || []).filter(r => r[2] === 'exchange').map(([a, n, , l]) => [a, n, l]);
-    // Spellbook's EVM exchange wallets (existing labels win)
     for (const [a, name, label] of CEX_EVM_SPELLBOOK) if (!EVM[a]) EVM[a] = { name, category: ENTITY_CATEGORY[name] || 'exchange', label, country: countryOf(name) };
-    // Exchange-owned reserve wallets (DefiLlama CEX adapters + Binance proof of reserves) on every chain
     const reserveKey = (chainId, a) => chainId === 'ton' ? tonRaw(a) || a
       : chainId === 'aptos' || chainId === 'sui' ? '0x' + a.slice(2).toLowerCase().padStart(64, '0')
       : chainId === 'bitcoin-cash' ? (/^[qp]/i.test(a) ? `bitcoincash:${a.toLowerCase()}` : a) : a;
@@ -211,15 +182,12 @@ export function loadNonEvmLabels() {
     }
     const ton = (OTHER.ton ||= {});
     for (const [raw, name, label] of TON_NAMES) if (!ton[raw]) ton[raw] = { name, category: ENTITY_CATEGORY[name] || 'exchange', label, country: countryOf(name) };
-    // XRPScan's named accounts first (verified names), then Spellbook's exchange wallets
     const xrp = (OTHER.xrp ||= {});
     for (const [a, name, category, label] of XRP_NAMES) if (!xrp[a]) xrp[a] = { name, category, label, country: category === 'other' ? null : countryOf(name) };
     for (const [chainId, rows] of Object.entries(CEX_NONEVM)) {
       const m = (OTHER[chainId] ||= {});
       for (const [a, name, label] of rows) if (!m[a]) m[a] = { name, category: ENTITY_CATEGORY[name] || 'exchange', label, country: countryOf(name) };
     }
-    // Bitcoin Cash: a legacy Bitcoin address and its CashAddr twin share the same hash160, i.e. the same key holder.
-    // Every known Bitcoin exchange wallet therefore identifies that exchange's Bitcoin Cash address too.
     const bch = (OTHER['bitcoin-cash'] ||= {});
     const bchRows = [];
     for (const [a, name, label] of CEX_NONEVM.bitcoin || []) {
@@ -230,9 +198,9 @@ export function loadNonEvmLabels() {
       bch[cash] ||= e; bch[cash.replace('bitcoincash:', '')] ||= e; bch[a] ||= e;
       bchRows.push([cash, name, e.label]);
     }
-    // For the directory: every non-EVM exchange wallet as { chainId: [[address, exchange, label]] }
     const reserves = (c, extra = []) => [...extra, ...((CEX_RESERVES[c] || []).map(([a, n, l]) => [reserveKey(c, a), n, l]))];
     return {
+      curated: [...INDIA_WALLETS, ...GLOBAL_WALLETS],
       ethereum: [...(CEX_RESERVES.evm || []), ...CEX_EVM_SPELLBOOK],
       dogecoin: reserves('dogecoin'), dash: reserves('dash'), sui: reserves('sui'), cosmos: reserves('cosmos'),
       solana: reserves('solana', CEX_NONEVM.solana), bitcoin: reserves('bitcoin', CEX_NONEVM.bitcoin), litecoin: reserves('litecoin', CEX_NONEVM.litecoin),
@@ -244,7 +212,6 @@ export function loadNonEvmLabels() {
   }).catch(() => ({}));
 }
 
-/** TON addresses come in raw ("0:<hex>") and user-friendly (EQ…/UQ…) forms; compare them in raw form. */
 function tonRaw(a) {
   if (/^-?\d:[0-9a-f]{64}$/i.test(a)) return a.toLowerCase();
   try {
@@ -257,7 +224,6 @@ function tonRaw(a) {
   } catch { return null; }
 }
 
-// The signed-in user's own labels (set by app.js from store.listLabels)
 const CUSTOM = new Map();
 const customKey = (chain, address) => `${chain.family === 'evm' ? 'evm' : chain.id}:${chain.family === 'evm' || /^0x/i.test(address) ? address.toLowerCase() : address}`;
 export function setCustomLabels(list) {
@@ -269,7 +235,6 @@ export function setCustomLabels(list) {
 }
 export const customLabelOf = (chain, address) => (address ? CUSTOM.get(customKey(chain, address)) || null : null);
 
-/** Curated lookup. */
 export function known(chain, address) {
   if (!address) return null;
   const mine = customLabelOf(chain, address);
@@ -281,13 +246,10 @@ export function known(chain, address) {
   return e;
 }
 
-/** Best entity for an address, combining curated data with any hint the API gave. */
 export function entityOf(chain, address, hint = null, name = null) {
-  // + live labels already looked up for Bitcoin (WalletExplorer) / TRON (TronScan)
   return known(chain, address) || hint || fromName(name) || (chain && peekLive(chain.id, address)) || null;
 }
 
-// Backwards-compatible helper used by the UI for display names
 export function knownLabel(chain, address) {
   const e = known(chain, address);
   return e ? { name: e.label, tags: [CATEGORY_LABEL[e.category], e.country ? placeOf(e.country) : null].filter(Boolean) } : null;

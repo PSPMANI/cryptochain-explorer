@@ -1,4 +1,3 @@
-// Sui adapter: fullnode JSON-RPC (suix_* / sui_* methods).
 import { rpc, fromUnits, toMs, NotFound } from '../utils.js';
 
 const ADDR_RE = /^0x[0-9a-fA-F]{1,64}$/;
@@ -7,9 +6,7 @@ const SUI = '0x2::sui::SUI';
 const PAGE = 20;
 const TX_OPTS = { showInput: true, showEffects: true, showBalanceChanges: true };
 
-/** Canonical 0x + 64 hex, lowercase. */
 const canon = a => '0x' + a.slice(2).toLowerCase().padStart(64, '0');
-/** Coin type → short symbol (last `::` segment). */
 const lastSeg = t => String(t || '').split('::').pop() || t;
 const isSui = t => t === SUI || /^0x0*2::sui::SUI$/.test(t || '');
 const ownerOf = o => (o && (o.AddressOwner || o.ObjectOwner)) || null;
@@ -25,7 +22,6 @@ export default function create(chain) {
     return canon(a);
   }
 
-  // Coin metadata (symbol/decimals) cache; unknown coins fall back to the type's last segment and 9 decimals.
   const metaCache = new Map();
   function coinMeta(type) {
     if (isSui(type)) return Promise.resolve({ symbol: chain.symbol, name: 'Sui', decimals: chain.decimals });
@@ -37,14 +33,12 @@ export default function create(chain) {
     return metaCache.get(type);
   }
 
-  /** Gas fee in MIST (can be negative when the storage rebate exceeds costs). */
   function feeMist(effects) {
     const g = effects?.gasUsed;
     if (!g) return null;
     try { return BigInt(g.computationCost || 0) + BigInt(g.storageCost || 0) - BigInt(g.storageRebate || 0); } catch { return null; }
   }
 
-  /** Human method: first MoveCall as module::function, else the first command / tx kind. */
   function methodOf(tx) {
     const t = tx?.transaction?.data?.transaction;
     if (!t) return null;
@@ -62,17 +56,13 @@ export default function create(chain) {
     return s === 'success' ? 'success' : s === 'failure' ? 'failed' : tx?.effects ? 'success' : 'pending';
   };
 
-  /**
-   * Net balance changes grouped by (owner, coinType), with the sender's gas added back
-   * so SUI values reflect the amount moved rather than amount + fee.
-   */
   function changes(tx) {
     const sender = tx?.transaction?.data?.sender || null;
     const fee = feeMist(tx.effects) ?? 0n;
     return (tx.balanceChanges || []).map(b => {
       const owner = ownerOf(b.owner);
       let raw = 0n;
-      try { raw = BigInt(b.amount); } catch { /* ignore */ }
+      try { raw = BigInt(b.amount); } catch { }
       if (owner === sender && isSui(b.coinType)) raw += fee;
       return { owner, coinType: b.coinType, raw };
     }).filter(c => c.raw !== 0n);
@@ -86,7 +76,6 @@ export default function create(chain) {
       call('sui_getObject', [address, { showType: true, showOwner: true }]).catch(() => null),
     ]);
 
-    // An address that is also an object ID is a package or an object, not a wallet.
     let kind = 'Wallet', name = null;
     const stats = [];
     const od = obj && obj.data;
@@ -100,14 +89,12 @@ export default function create(chain) {
     }
     if (bal?.coinObjectCount != null) stats.push({ label: 'SUI coin objects', value: String(bal.coinObjectCount) });
 
-    // Other coin balances (resolved through coin metadata; capped to keep request count sane).
     const others = (all || []).filter(b => !isSui(b.coinType) && b.totalBalance !== '0').slice(0, 30);
     const tokens = await Promise.all(others.map(async b => {
       const m = await coinMeta(b.coinType);
       return { symbol: m.symbol, name: m.name, balance: fromUnits(b.totalBalance, m.decimals), contract: b.coinType };
     }));
 
-    // Activity check only when there's no balance to go on.
     let active = !!od || BigInt(bal?.totalBalance || 0) > 0n || tokens.length > 0;
     if (!active) {
       const q = await call('suix_queryTransactionBlocks', [{ filter: { ToAddress: address }, options: {} }, null, 1, true]).catch(() => null);
@@ -118,12 +105,11 @@ export default function create(chain) {
     return {
       address, active, name, labels: [], kind,
       balance: sui(bal?.totalBalance || 0),
-      txCount: null, // no cheap counter on the fullnode RPC
+      txCount: null,
       stats, tokens,
     };
   }
 
-  /** Build a TxSummary relative to `address`. */
   async function summarize(tx, address) {
     const sender = tx?.transaction?.data?.sender || null;
     const fee = feeMist(tx.effects);
@@ -138,14 +124,12 @@ export default function create(chain) {
     };
     const cs = changes(tx);
     const mine = cs.filter(c => c.owner === address);
-    // Prefer the SUI change; otherwise the largest token change of the address.
     const pick = mine.find(c => isSui(c.coinType)) || mine.sort((a, b) => (b.raw < 0n ? -b.raw : b.raw) > (a.raw < 0n ? -a.raw : a.raw) ? 1 : -1)[0];
     if (pick) {
       const m = await coinMeta(pick.coinType);
       const neg = pick.raw < 0n;
       out.value = fromUnits(neg ? -pick.raw : pick.raw, m.decimals);
       out.symbol = m.symbol;
-      // Counterparty: the biggest opposite-signed change of the same coin.
       const other = cs.filter(c => c.coinType === pick.coinType && c.owner !== address && (c.raw < 0n) !== neg)
         .sort((a, b) => ((b.raw < 0n ? -b.raw : b.raw) > (a.raw < 0n ? -a.raw : a.raw) ? 1 : -1))[0];
       if (neg) { out.direction = 'out'; out.from = address; out.to = other?.owner || null; }
@@ -158,10 +142,6 @@ export default function create(chain) {
     return out;
   }
 
-  /**
-   * Newest-first history merging two server-side streams (sent: FromAddress, received: ToAddress).
-   * Cursor = { from, to } holding each stream's native cursor (null = start, false = exhausted).
-   */
   async function getTxs(address, cursor = null) {
     address = checkAddr(address);
     const cur = cursor || { from: null, to: null };
@@ -173,14 +153,12 @@ export default function create(chain) {
       query({ ToAddress: address }, cur.to),
     ]);
 
-    // Merge, dedupe by digest, newest first, and take one page.
     const byDigest = new Map();
     for (const t of [...(sent?.data || []), ...(recv?.data || [])]) if (t?.digest && !byDigest.has(t.digest)) byDigest.set(t.digest, t);
     const merged = [...byDigest.values()].sort((a, b) => Number(b.timestampMs || 0) - Number(a.timestampMs || 0));
     const page = merged.slice(0, PAGE);
     const taken = new Set(page.map(t => t.digest));
 
-    // Advance each stream to the last of its items that made it onto this page.
     const advance = (res, c) => {
       if (c === false || !res) return false;
       const data = res.data || [];
@@ -199,7 +177,6 @@ export default function create(chain) {
     hash = String(hash || '').trim();
     if (!DIGEST_RE.test(hash)) throw new NotFound('Not a Sui transaction digest');
     const [tx, latest] = await Promise.all([
-      // The node answers "Could not find the referenced transaction", which rpc() doesn't map.
       call('sui_getTransactionBlock', [hash, { ...TX_OPTS, showEvents: true }]).catch(e => {
         if (e instanceof NotFound || /could not find|deserializ/i.test(e.message)) throw new NotFound('Transaction not found');
         throw e;
@@ -212,7 +189,6 @@ export default function create(chain) {
     const fee = feeMist(tx.effects);
     const cs = changes(tx);
 
-    // SUI movement → inputs/outputs; other coins → token transfers.
     const inputs = [], outputs = [];
     let moved = 0n;
     for (const c of cs.filter(c => isSui(c.coinType))) {
@@ -268,7 +244,6 @@ export default function create(chain) {
       call('sui_getLatestCheckpointSequenceNumber', [], { ttl: 3000 }),
       call('suix_getReferenceGasPrice', [], { ttl: 60000 }).catch(() => null),
     ]);
-    // The checkpoint itself is small and carries epoch + cumulative tx count.
     const ck = cp != null ? await call('sui_getCheckpoint', [String(cp)], { ttl: 3000 }).catch(() => null) : null;
     const extra = [];
     if (gas != null) extra.push({ label: 'Reference gas price', value: `${gas} MIST` });

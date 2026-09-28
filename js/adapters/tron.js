@@ -1,9 +1,6 @@
-// TRON adapter (TronGrid). Native TRX + TRC20 history merged, TRC20 log decoding,
-// hex (41...) <-> base58check (T...) address conversion via WebCrypto SHA-256.
 
 import { fetchJSON, fromUnits, toMs, NotFound, sleep } from '../utils.js';
 
-// Well-known TRC20 tokens (contract -> meta). Anything else is shown by short address.
 const KNOWN = {
   TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t: { symbol: 'USDT', name: 'Tether USD', decimals: 6 },
   TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8: { symbol: 'USDC', name: 'USD Coin', decimals: 6 },
@@ -23,7 +20,6 @@ const ADDR_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 const HEX_ADDR_RE = /^(?:0x)?41[0-9a-fA-F]{40}$/;
 const HASH_RE = /^(?:0x)?[0-9a-fA-F]{64}$/;
 
-// ---- base58check ----
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const b58cache = new Map();
@@ -43,7 +39,6 @@ function b58encode(bytes) {
   return s;
 }
 
-/** Hex (41 + 20 bytes, or bare 20 bytes) -> T... base58check address. Other strings pass through. */
 async function toBase58(hex) {
   if (!hex || typeof hex !== 'string') return null;
   if (ADDR_RE.test(hex)) return hex;
@@ -61,7 +56,6 @@ async function toBase58(hex) {
 const short = a => (a ? `${a.slice(0, 5)}…${a.slice(-4)}` : '');
 const sunToTrx = v => fromUnits(v || 0, 6);
 
-// ---- HTTP (TronGrid is ~1-3 req/s without an API key; space calls out and retry rate limits) ----
 
 let lastCall = 0;
 async function tron(chain, path, body) {
@@ -77,7 +71,6 @@ async function tron(chain, path, body) {
       await sleep(1500 * (attempt + 1));
       continue;
     }
-    // TronGrid reports throttling as a 200 with {"Error": "request rate ... exceeded"}.
     const err = r && (r.Error || (r.success === false && r.error));
     if (err) {
       if (/rate|suspend/i.test(err) && attempt < 2) { await sleep(2500 * (attempt + 1)); continue; }
@@ -101,7 +94,6 @@ function decodeHexText(h) {
   try { return new TextDecoder().decode(hexToBytes(h)).replace(/\0/g, '') || null; } catch { return null; }
 }
 
-// Decode an ABI-encoded string return value (for symbol()/name()).
 function abiString(hex) {
   if (!hex || hex.length < 128) return decodeHexText((hex || '').replace(/(00)+$/, ''));
   const len = parseInt(hex.slice(64, 128), 16);
@@ -109,7 +101,6 @@ function abiString(hex) {
 }
 
 const metaCache = new Map();
-/** Token symbol/decimals: known list, else constant calls to the contract (cached). */
 async function tokenMeta(chain, contract) {
   if (KNOWN[contract]) return KNOWN[contract];
   if (metaCache.has(contract)) return metaCache.get(contract);
@@ -127,7 +118,6 @@ async function tokenMeta(chain, contract) {
   return meta;
 }
 
-// ---- mapping ----
 
 const CONTRACT_NAMES = {
   TransferContract: 'Transfer',
@@ -144,7 +134,6 @@ const CONTRACT_NAMES = {
   CreateSmartContract: 'Deploy Contract',
 };
 
-/** Pull from/to/value/method out of a raw_data.contract[0] entry (addresses still hex or T). */
 function parseContract(c) {
   const type = c?.type || '';
   const v = c?.parameter?.value || {};
@@ -210,7 +199,6 @@ export default function create(chain) {
     const r = await tron(chain, `/v1/accounts/${addr}`);
     const acct = r?.data?.[0];
     if (!acct) {
-      // Valid address that has never been activated on-chain.
       return { address: addr, active: false, name: null, labels: [], kind: 'Wallet', balance: 0, txCount: 0, stats: [], tokens: [] };
     }
 
@@ -222,14 +210,12 @@ export default function create(chain) {
       if (KNOWN[addr]) { kind = 'Token'; name = name || KNOWN[addr].name; }
     }
 
-    // TRC20 balances: known tokens first, then a capped list of unknown ones (lots of airdrop spam).
     const known = [], unknown = [];
     for (const entry of acct.trc20 || []) {
       const [contract, raw] = Object.entries(entry)[0] || [];
       if (!contract || !raw || raw === '0') continue;
       const k = KNOWN[contract];
       if (k) known.push({ symbol: k.symbol, name: k.name, balance: fromUnits(raw, k.decimals), contract });
-      // Decimals unknown without a contract call: guess 18 for very large raw values, else 6.
       else unknown.push({ symbol: short(contract), name: null, balance: fromUnits(raw, String(raw).length > 18 ? 18 : 6), contract });
     }
     known.sort((a, b) => b.balance - a.balance);
@@ -256,11 +242,6 @@ export default function create(chain) {
     };
   }
 
-  /**
-   * Merges two paginated TronGrid feeds (native txs and TRC20 transfers).
-   * Cursor: { n, t } per feed ({fp, done, oldest}), plus `buf` of fetched-but-not-yet-emitted items.
-   * Only items newer than every unfinished feed's oldest fetched item are emitted, so order stays exact.
-   */
   async function getTxs(address, cursor = null) {
     const me = await normalizeAddress(address);
     const st = cursor ? structuredClone(cursor) : {
@@ -270,7 +251,6 @@ export default function create(chain) {
     const seen = new Set(st.seen);
     const emit = [];
 
-    // Pull pages until we have a reasonable page (or both feeds are exhausted).
     for (let round = 0; round < 3 && emit.length < 10; round++) {
       let fetched = false;
       for (const [src, path] of [['t', '/transactions/trc20'], ['n', '/transactions']]) {
@@ -290,7 +270,6 @@ export default function create(chain) {
         fetched = true;
       }
 
-      // Native list repeats TRC20 transfer txs as "Contract Call" rows: fold their fee/status into the token row.
       const tokenRows = new Map(st.buf.filter(i => i._src === 't').map(i => [i.hash, i]));
       st.buf = st.buf.filter(i => {
         if (i._src !== 'n' || i._type !== 'TriggerSmartContract') return true;
@@ -328,7 +307,6 @@ export default function create(chain) {
     if (!confirmed) status = 'pending';
     else if (info.result === 'FAILED' || (receipt.result && receipt.result !== 'SUCCESS') || (ret && ret !== 'SUCCESS')) status = 'failed';
 
-    // Decode TRC20/TRC721 Transfer(address,address,uint256) events.
     const transfers = [];
     for (const log of info?.log || []) {
       if (log.topics?.[0] !== TRANSFER_TOPIC || log.topics.length < 3) continue;

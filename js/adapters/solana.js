@@ -1,4 +1,3 @@
-// Solana adapter: plain JSON-RPC (getBalance, getAccountInfo, getSignaturesForAddress, getTransaction).
 import { rpc, fromUnits, toMs, NotFound } from '../utils.js';
 
 const ADDR_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
@@ -9,7 +8,6 @@ const SYSTEM = '11111111111111111111111111111111';
 const TOKEN = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const TOKEN22 = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 
-// Well-known program IDs → display names.
 const PROGRAMS = {
   [SYSTEM]: 'System Program',
   [TOKEN]: 'Token Program',
@@ -31,7 +29,6 @@ const PROGRAMS = {
   metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s: 'Metaplex Token Metadata',
 };
 
-// A few well-known mints so token transfers read nicely.
 const MINTS = {
   EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: 'USDC',
   Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: 'USDT',
@@ -56,12 +53,6 @@ export default function create(chain) {
     return a;
   }
 
-  /**
-   * getTransaction for each signature, `limit` at a time. Failures become null.
-   * publicnode rejects JSON-RPC batches with more than one getTransaction and effectively
-   * serialises these calls (~0.5 s each), so the whole page gets a time budget: anything not
-   * fetched by `budgetMs` is left null and shown as a bare signature/time/status row.
-   */
   async function pooledTxs(sigs, limit = 5, budgetMs = 12000) {
     const out = new Array(sigs.length).fill(null);
     const deadline = Date.now() + budgetMs;
@@ -81,8 +72,6 @@ export default function create(chain) {
 
   async function getAddress(address) {
     address = checkAddr(address);
-    // SPL token holdings are fetched in parallel. Many public RPCs (publicnode included) block
-    // getTokenAccountsByOwner, so failures are ignored and a short timeout keeps the page snappy.
     const tokenLists = Promise.all([TOKEN, TOKEN22].map(pid =>
       call('getTokenAccountsByOwner', [address, { programId: pid }, { encoding: 'jsonParsed' }], { timeout: 6000 }).catch(() => null)));
     const [info, sigs] = await Promise.all([
@@ -94,7 +83,6 @@ export default function create(chain) {
     const owner = acct && acct.owner;
     const parsed = acct && acct.data && acct.data.parsed;
 
-    // Classify the account from its owner program and parsed data.
     let kind = 'Wallet', name = null;
     const stats = [];
     if (acct) {
@@ -142,16 +130,14 @@ export default function create(chain) {
       labels: [],
       kind,
       balance,
-      txCount: null, // RPC has no cheap counter
+      txCount: null,
       stats,
       tokens,
     };
   }
 
-  /** Account keys as plain base58 strings (jsonParsed gives objects). */
   const keysOf = tx => (tx?.transaction?.message?.accountKeys || []).map(k => (typeof k === 'string' ? k : k.pubkey));
 
-  /** Human method name from the top-level instructions. */
   function methodOf(tx) {
     const ixs = tx?.transaction?.message?.instructions || [];
     const names = [];
@@ -167,14 +153,13 @@ export default function create(chain) {
     return names.length ? names.slice(0, 2).join(', ') : null;
   }
 
-  /** Per-(owner, mint) SPL token balance deltas, computed on raw integer amounts to avoid float noise. */
   function tokenDeltas(meta) {
     const map = new Map();
     const add = (b, sign) => {
       const owner = b.owner || null;
       const key = `${owner}|${b.mint}`;
       const cur = map.get(key) || { owner, mint: b.mint, raw: 0n, decimals: b.uiTokenAmount?.decimals ?? 0 };
-      try { cur.raw += sign * BigInt(b.uiTokenAmount?.amount ?? 0); } catch { /* malformed amount */ }
+      try { cur.raw += sign * BigInt(b.uiTokenAmount?.amount ?? 0); } catch { }
       map.set(key, cur);
     };
     for (const b of meta?.preTokenBalances || []) add(b, -1n);
@@ -182,12 +167,10 @@ export default function create(chain) {
     return [...map.values()].filter(d => d.raw !== 0n).map(d => ({ ...d, delta: fromUnits(d.raw, d.decimals) }));
   }
 
-  /** The counterparty with the largest opposite-signed change of the same mint. */
   const counterpart = (tds, d) => tds
     .filter(x => x.mint === d.mint && x.owner !== d.owner && Math.sign(x.delta) === -Math.sign(d.delta))
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))[0] || null;
 
-  /** Build a TxSummary for `address` from a full transaction (or from the bare signature entry). */
   function summarize(sigInfo, tx, address) {
     const base = {
       hash: sigInfo.signature,
@@ -207,7 +190,6 @@ export default function create(chain) {
     const pre = meta.preBalances || [], post = meta.postBalances || [];
     const deltas = keys.map((k, i) => (post[i] ?? 0) - (pre[i] ?? 0));
     const idx = keys.indexOf(address);
-    // Net SOL movement for the queried address, excluding the fee it paid as fee payer.
     const net = idx >= 0 ? deltas[idx] + (idx === 0 ? fee : 0) : 0;
     const biggest = sign => {
       let best = -1;
@@ -222,7 +204,6 @@ export default function create(chain) {
       return base;
     }
 
-    // No SOL moved: fall back to the largest SPL token change owned by the address.
     const tds = tokenDeltas(meta);
     const mine = tds.filter(d => d.owner === address).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))[0];
     if (mine) {
@@ -234,7 +215,6 @@ export default function create(chain) {
       return base;
     }
 
-    // Only paid a fee (or a pure program interaction).
     base.from = keys[0] || null;
     if (keys[0] === address) base.direction = 'self';
     return base;
@@ -263,20 +243,15 @@ export default function create(chain) {
     const fee = Number(meta.fee || 0);
     const pre = meta.preBalances || [], post = meta.postBalances || [];
 
-    // SOL movement per account; the fee payer's fee is not counted as value moved.
     const inputs = [], outputs = [];
-    let moved = 0; // lamports received, summed as integers to avoid float noise
+    let moved = 0;
     keys.forEach((k, i) => {
       const d = (post[i] ?? 0) - (pre[i] ?? 0) + (i === 0 ? fee : 0);
       if (d < 0) inputs.push({ address: k, name: PROGRAMS[k] || null, value: sol(-d) });
       else if (d > 0) { outputs.push({ address: k, name: PROGRAMS[k] || null, value: sol(d), note: null }); moved += d; }
     });
-    // Always show the fee payer / signer as a sender.
     if (keys[0] && !inputs.some(x => x.address === keys[0])) inputs.unshift({ address: keys[0], name: null, value: 0 });
 
-    // SPL token transfers: each increase paired with the largest decrease of the same mint
-    // (an approximation: balance deltas don't say who paid whom when many parties are involved).
-    // Unmatched decreases are burns / closes and get `to: null`.
     const transfers = [];
     const tds = tokenDeltas(meta);
     for (const up of tds.filter(d => d.delta > 0)) {
