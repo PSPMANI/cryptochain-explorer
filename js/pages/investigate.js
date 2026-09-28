@@ -12,6 +12,7 @@ import { chainLabel } from './shared.js';
 import { prefetchLabels, hasLiveLabels } from '../labels-live.js';
 import { mountTrace } from './tracegraph.js';
 import { mountFinalDestinations } from './finaldest.js';
+import { mountFlowGraph } from './flowgraph.js';
 import { buildReport, trailCSV } from '../report.js';
 import { balanceChart, volumeChart, hbarChart, heatmap, bindCharts } from '../charts.js';
 
@@ -74,6 +75,8 @@ export async function investigatePage(chainsParam, address, params, stale) {
     const info = await withTimeout((await adapter(id)).getAddress(address), 15000).catch(() => null);
     if (stale() || !info) return;
     setName(CHAIN[id], info);
+    const box = pick.querySelector(`[data-chain="${id}"] input`);
+    if (!info.active && requested.length > 1 && box && !autoRun) box.checked = false;
     const el = pick.querySelector(`[data-chain="${id}"] .muted`);
     if (el) el.textContent = `${amount(info.balance)} ${CHAIN[id].symbol}${info.txCount ? ` · ${compact(info.txCount)} txs` : ''}`;
   });
@@ -185,7 +188,7 @@ function renderReport(el, m, ctx, stale) {
     ${(p => p.length ? `<details class="notice danger"><summary><b>⚠ ${p.length} address-poisoning lookalike${p.length > 1 ? 's' : ''}</b>: fake addresses that imitate real counterparties. Never copy addresses from history.</summary>
       <div class="small break">${p.map(w => `${esc(w.address)} imitates ${esc(w.real)}`).join('<br>')}</div></details>` : '')(m.warnings.filter(w => w.kind === 'address-poisoning'))}
     <nav class="rep-nav" aria-label="Report sections">
-      ${[['overview', 'Overview'], ['report', '📄 Report'], ['final', 'Where it ended up'], ['trace', 'Explore hops'], ['charts', 'Charts'], ['cp', 'Counterparties'], ['xchain', 'Cross-chain'], ['assets', 'Assets'], ['tx', 'Transfers']]
+      ${[['overview', 'Overview'], ['flow', '🔀 Flow graph'], ['report', '📄 Report'], ['final', 'Where it ended up'], ['trace', 'Explore hops'], ['charts', 'Charts'], ['cp', 'Counterparties'], ['xchain', 'Cross-chain'], ['assets', 'Assets'], ['tx', 'Transfers']]
         .map(([k, l], i) => `<button data-sec="${k}" class="${i ? '' : 'on'}">${l}</button>`).join('')}
     </nav>
 
@@ -207,6 +210,12 @@ function renderReport(el, m, ctx, stale) {
           <div class="sub">${t.first ? `${new Date(t.first).toLocaleDateString()} – ${new Date(t.last).toLocaleDateString()}` : '—'}</div></div>
       </div>
       <p class="muted small">${ctx.chainIds.length} network${ctx.chainIds.length > 1 ? 's' : ''} · up to ${ctx.depth} transfers each. USD values use current prices for native coins and stablecoins; unpriced tokens count as $0.</p>
+    </section>
+
+    <section class="card" id="sec-flow">
+      <div class="section-head"><div><h2>🔀 Money flow graph</h2>
+        <p class="muted small">Every wallet that sent money to this wallet (left) and every wallet it sent money to (right), with amounts. Filter by date, network, asset, minimum value, or pick a sender and a receiver to see one route: received from → this wallet → sent to.</p></div></div>
+      <div id="flow-mount"></div>
     </section>
 
     <section class="card" id="sec-report">
@@ -269,6 +278,7 @@ function renderReport(el, m, ctx, stale) {
       <div class="more" id="tx-more"></div></section>`;
 
   bindCharts(el);
+  mountFlowGraph(el.querySelector('#flow-mount'), m, ctx);
   const finalApi = mountFinalDestinations(el.querySelector('#final-mount'), m, ctx, stale);
 
   const site = location.origin + location.pathname;

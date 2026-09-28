@@ -82,6 +82,7 @@ function initPalette() {
         out.push({ group: 'Search', icon: kind === 'Transaction' ? '⇄' : kind === 'Name' ? '@' : '◎', title: short(t, 14), sub: `${kind} · ${nets}`, search: t });
         if (kind === 'Address') {
           const ids = cands.filter(c => c.kind === 'address' && !CHAIN[c.chainId].testnet).map(c => c.chainId);
+          if (ids.some(id => CHAIN[id].family === 'evm')) ids.splice(0, ids.length, 'ethereum');
           out.push({ group: 'Search', icon: '⌖', title: 'Investigate this wallet', sub: `Trace funds to their final destinations · ${ids.length === 1 ? CHAIN[ids[0]].name : ids.length + ' networks'}`, href: `#/investigate/${ids.join(',')}/${encodeURIComponent(t)}` });
         }
       } else {

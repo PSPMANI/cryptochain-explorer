@@ -60,15 +60,15 @@ const sunToTrx = v => fromUnits(v || 0, 6);
 let lastCall = 0;
 async function tron(chain, path, body) {
   for (let attempt = 0; ; attempt++) {
-    const wait = lastCall + 400 - Date.now();
+    const wait = lastCall + 1100 - Date.now();
     if (wait > 0) await sleep(wait);
     lastCall = Date.now();
     let r;
     try {
       r = await fetchJSON(chain.api + path, body ? { method: 'POST', body } : {});
     } catch (e) {
-      if (e instanceof NotFound || attempt >= 2) throw e;
-      await sleep(1500 * (attempt + 1));
+      if (e instanceof NotFound || attempt >= 3) throw e;
+      await sleep(1200 * (attempt + 1));
       continue;
     }
     const err = r && (r.Error || (r.success === false && r.error));
@@ -251,12 +251,12 @@ export default function create(chain) {
     const seen = new Set(st.seen);
     const emit = [];
 
-    for (let round = 0; round < 3 && emit.length < 10; round++) {
+    for (let round = 0; round < 3 && emit.length < (cursor ? 150 : 10); round++) {
       let fetched = false;
       for (const [src, path] of [['t', '/transactions/trc20'], ['n', '/transactions']]) {
         const f = st[src];
         if (f.done || has(src)) continue;
-        const qs = `?limit=20${f.fp ? `&fingerprint=${encodeURIComponent(f.fp)}` : ''}`;
+        const qs = `?limit=50${f.fp ? `&fingerprint=${encodeURIComponent(f.fp)}` : ''}`;
         const r = await tron(chain, `/v1/accounts/${me}${path}${qs}`);
         const data = (r?.data || []).filter(x => (src === 't' ? x.transaction_id : x.txID));
         for (const x of data) {

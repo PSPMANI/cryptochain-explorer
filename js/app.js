@@ -268,6 +268,11 @@ function updateLiveCount() {
   if (k) { k.textContent = ok; ks.textContent = `of ${total} live right now`; }
 }
 
+function investigateChains(cands) {
+  const ids = cands.filter(c => c.kind === 'address' && !CHAIN[c.chainId].testnet).map(c => c.chainId);
+  return ids.some(id => CHAIN[id].family === 'evm') ? ['ethereum'] : ids;
+}
+
 function investigateStart() {
   document.title = 'Investigate · CryptChain';
   setQuery('');
@@ -289,7 +294,7 @@ function investigateStart() {
   document.getElementById('inv-start').onsubmit = e => {
     e.preventDefault();
     const q = input.value.trim();
-    const ids = detect(q).filter(c => c.kind === 'address' && !CHAIN[c.chainId].testnet).map(c => c.chainId);
+    const ids = investigateChains(detect(q));
     if (!ids.length) { msg.textContent = 'That doesn’t look like a wallet address on a supported network.'; return; }
     location.hash = `#/investigate/${ids.join(',')}/${encodeURIComponent(q)}`;
   };
