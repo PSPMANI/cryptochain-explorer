@@ -214,7 +214,7 @@ function renderReport(el, m, ctx, stale) {
 
     <section class="card" id="sec-flow">
       <div class="section-head"><div><h2>🔀 Money flow graph</h2>
-        <p class="muted small">Every wallet that sent money to this wallet (left) and every wallet it sent money to (right), with amounts. Filter by date, network, asset, minimum value, or pick a sender and a receiver to see one route: received from → this wallet → sent to.</p></div></div>
+        <p class="muted small">Every wallet that sent money to this wallet (left) and every wallet it sent money to (right), with amounts. Direct view: filter by date, network, asset and amount, or pick a sender and a receiver. Hop-by-hop view: pick which hops to see (hop 1 = wallets paid directly, hop 2 = who they paid next, …) and click any wallet to follow its route.</p></div></div>
       <div id="flow-mount"></div>
     </section>
 
@@ -278,8 +278,8 @@ function renderReport(el, m, ctx, stale) {
       <div class="more" id="tx-more"></div></section>`;
 
   bindCharts(el);
-  mountFlowGraph(el.querySelector('#flow-mount'), m, ctx);
   const finalApi = mountFinalDestinations(el.querySelector('#final-mount'), m, ctx, stale);
+  mountFlowGraph(el.querySelector('#flow-mount'), m, ctx, () => finalApi && finalApi.latest());
 
   const site = location.origin + location.pathname;
   const stamp = new Date().toISOString().slice(0, 10);

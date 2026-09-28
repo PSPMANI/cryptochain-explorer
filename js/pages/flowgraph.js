@@ -6,12 +6,35 @@ import { esc, short, amount, usd, chainDot, link, timeCell } from '../ui.js';
 
 const DAY = 86400000;
 const CAT_FALLBACK = { exchange: '#d95926', bridge: '#3987e5', dex: '#199e70', exploit: '#d03b3b', other: '#a78bfa', none: '#898781' };
-const CAT_VAR = c => { const k = c && ['exchange', 'bridge', 'dex', 'exploit'].includes(c) ? c : c ? 'other' : 'none'; return `var(--cat-${k}, ${CAT_FALLBACK[k]})`; };
-const INK = { t: 'fill:var(--text,#0f172a);font:600 13px Inter,system-ui,sans-serif', s: 'fill:var(--muted,#5b6477);font:11px Inter,system-ui,sans-serif', v: 'fill:var(--text,#0f172a);font:600 12px "JetBrains Mono",Consolas,monospace', h: 'fill:var(--muted,#5b6477);font:700 11px Inter,system-ui,sans-serif;letter-spacing:.06em', in: 'fill:var(--in,#16a34a);font:600 12px "JetBrains Mono",Consolas,monospace', out: 'fill:var(--out,#e11d48);font:600 12px "JetBrains Mono",Consolas,monospace' };
+export const CAT_VAR = c => { const k = c && ['exchange', 'bridge', 'dex', 'exploit'].includes(c) ? c : c ? 'other' : 'none'; return `var(--cat-${k}, ${CAT_FALLBACK[k]})`; };
+export const INK = { t: 'fill:var(--text,#0f172a);font:600 13px Inter,system-ui,sans-serif', s: 'fill:var(--muted,#5b6477);font:11px Inter,system-ui,sans-serif', v: 'fill:var(--text,#0f172a);font:600 12px "JetBrains Mono",Consolas,monospace', h: 'fill:var(--muted,#5b6477);font:700 11px Inter,system-ui,sans-serif;letter-spacing:.06em', in: 'fill:var(--in,#16a34a);font:600 12px "JetBrains Mono",Consolas,monospace', out: 'fill:var(--out,#e11d48);font:600 12px "JetBrains Mono",Consolas,monospace' };
 const dateVal = ms => new Date(ms).toISOString().slice(0, 10);
 const nameOf = r => (r.entity && (r.entity.label || r.entity.name)) || r.cpName || null;
 
-export function mountFlowGraph(el, m, ctx) {
+export function mountFlowGraph(el, m, ctx, getTrace) {
+  el.innerHTML = `
+    <div class="fg-modes" role="tablist">
+      <button class="chip-btn on" data-mode="direct" role="tab">⇄ Direct: senders → wallet → receivers</button>
+      <button class="chip-btn" data-mode="hops" role="tab">⇶ Hop by hop: follow the money</button>
+    </div>
+    <div id="fg-direct"></div>
+    <div id="fg-hops" hidden></div>`;
+  mountDirect(el.querySelector('#fg-direct'), m, ctx);
+  let hopsMounted = false;
+  el.querySelector('.fg-modes').addEventListener('click', async e => {
+    const b = e.target.closest('[data-mode]');
+    if (!b) return;
+    el.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === b));
+    el.querySelector('#fg-direct').hidden = b.dataset.mode !== 'direct';
+    el.querySelector('#fg-hops').hidden = b.dataset.mode !== 'hops';
+    if (b.dataset.mode === 'hops' && !hopsMounted) {
+      hopsMounted = true;
+      (await import('./hopgraph.js')).mountHopGraph(el.querySelector('#fg-hops'), ctx, getTrace);
+    }
+  });
+}
+
+function mountDirect(el, m, ctx) {
   const rows = m.rows.filter(r => r.counterparty);
   const times = rows.map(r => r.time).filter(Boolean);
   const minT = times.length ? Math.min(...times) : Date.now(), maxT = times.length ? Math.max(...times) : Date.now();
