@@ -212,12 +212,11 @@ table.txs td:nth-child(4), table.txs td:nth-child(6) { max-width: 320px; }
 .fg-kpis .small-v { font-size: 14px; font-family: var(--mono); }
 .fg-canvas { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); padding: 12px; margin-bottom: 10px; }
 .fg-svg { width: 100%; min-width: 820px; height: auto; display: block; }
-.fg-link { fill: none; opacity: .38; transition: opacity .15s; }
-.fg-link:hover { opacity: .8; }
+.fg-link { transition: stroke-opacity .15s; }
+.fg-link:hover { stroke-opacity: .85 !important; }
 .fg-node { cursor: pointer; }
 .fg-node.other { cursor: default; }
-.fg-node rect:first-of-type { fill: var(--panel-solid); stroke: var(--line2); }
-.fg-node:hover rect:first-of-type, .fg-node:focus rect:first-of-type { stroke: var(--accent); stroke-width: 1.5; }
+.fg-node:hover rect:first-of-type, .fg-node:focus rect:first-of-type { stroke: var(--accent) !important; stroke-width: 1.5; }
 .fg-t { font: 600 13px var(--sans); fill: var(--text); }
 .fg-s { font: 11px var(--sans); fill: var(--muted); }
 .fg-v { font: 600 12px var(--mono); fill: var(--text); }

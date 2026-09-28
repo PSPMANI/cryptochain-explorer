@@ -5,7 +5,9 @@ import { download, toast } from '../core.js';
 import { esc, short, amount, usd, chainDot, link, timeCell } from '../ui.js';
 
 const DAY = 86400000;
-const CAT_VAR = c => `var(--cat-${c && ['exchange', 'bridge', 'dex', 'exploit'].includes(c) ? c : c ? 'other' : 'none'})`;
+const CAT_FALLBACK = { exchange: '#d95926', bridge: '#3987e5', dex: '#199e70', exploit: '#d03b3b', other: '#a78bfa', none: '#898781' };
+const CAT_VAR = c => { const k = c && ['exchange', 'bridge', 'dex', 'exploit'].includes(c) ? c : c ? 'other' : 'none'; return `var(--cat-${k}, ${CAT_FALLBACK[k]})`; };
+const INK = { t: 'fill:var(--text,#0f172a);font:600 13px Inter,system-ui,sans-serif', s: 'fill:var(--muted,#5b6477);font:11px Inter,system-ui,sans-serif', v: 'fill:var(--text,#0f172a);font:600 12px "JetBrains Mono",Consolas,monospace', h: 'fill:var(--muted,#5b6477);font:700 11px Inter,system-ui,sans-serif;letter-spacing:.06em', in: 'fill:var(--in,#16a34a);font:600 12px "JetBrains Mono",Consolas,monospace', out: 'fill:var(--out,#e11d48);font:600 12px "JetBrains Mono",Consolas,monospace' };
 const dateVal = ms => new Date(ms).toISOString().slice(0, 10);
 const nameOf = r => (r.entity && (r.entity.label || r.entity.name)) || r.cpName || null;
 
@@ -101,14 +103,14 @@ export function mountFlowGraph(el, m, ctx) {
       const sub = x.other ? `${x.n} transfers` : `${cat ? (CATEGORY_LABEL[cat] || 'Labeled') + ' · ' : ''}${x.n} tx`;
       return `<g class="fg-node${x.other ? ' other' : ''}" ${x.other ? '' : `data-side="${side}" data-addr="${esc(x.address)}"`} tabindex="0">
         <title>${esc(title)}</title>
-        <rect x="${nx}" y="${y}" width="${NW}" height="${rowH}" rx="10" style="--c:${CAT_VAR(cat)}"/>
-        <rect x="${side === 'in' ? nx : nx + NW - 5}" y="${y}" width="5" height="${rowH}" rx="2" fill="${CAT_VAR(cat)}"/>
-        <text x="${nx + 14}" y="${y + 19}" class="fg-t">${esc(label.length > 30 ? label.slice(0, 29) + '…' : label)}</text>
-        <text x="${nx + 14}" y="${y + 36}" class="fg-s">${esc(sub)}</text>
-        <text x="${nx + NW - 12}" y="${y + 19}" class="fg-v" text-anchor="end">${esc(amtText(x))}</text>
+        <rect x="${nx}" y="${y}" width="${NW}" height="${rowH}" rx="10" style="fill:var(--panel-solid,#fff);stroke:var(--line2,#cbd5e1)"/>
+        <rect x="${side === 'in' ? nx : nx + NW - 5}" y="${y}" width="5" height="${rowH}" rx="2" style="fill:${CAT_VAR(cat)}"/>
+        <text x="${nx + 14}" y="${y + 19}" class="fg-t" style="${INK.t}">${esc(label.length > 30 ? label.slice(0, 29) + '…' : label)}</text>
+        <text x="${nx + 14}" y="${y + 36}" class="fg-s" style="${INK.s}">${esc(sub)}</text>
+        <text x="${nx + NW - 12}" y="${y + 19}" class="fg-v" text-anchor="end" style="${INK.v}">${esc(amtText(x))}</text>
       </g>`;
     };
-    const ribbon = (x1, y1, x2, y2, w, cat, tip) => `<path class="fg-link" d="M${x1},${y1} C${(x1 + x2) / 2},${y1} ${(x1 + x2) / 2},${y2} ${x2},${y2}" stroke="${CAT_VAR(cat)}" stroke-width="${w.toFixed(1)}"><title>${esc(tip)}</title></path>`;
+    const ribbon = (x1, y1, x2, y2, w, cat, tip) => `<path class="fg-link" d="M${x1},${y1} C${(x1 + x2) / 2},${y1} ${(x1 + x2) / 2},${y2} ${x2},${y2}" style="fill:none;stroke:${CAT_VAR(cat)};stroke-opacity:.4" stroke-width="${w.toFixed(1)}"><title>${esc(tip)}</title></path>`;
     let links = '', nodes = '';
     const inTotal = L.reduce((s, x) => s + (useUsd ? x.usd : x.n), 0) || 1, outTotal = R.reduce((s, x) => s + (useUsd ? x.usd : x.n), 0) || 1;
     let accIn = cy - ch / 2 + 10, accOut = cy - ch / 2 + 10;
@@ -125,12 +127,12 @@ export function mountFlowGraph(el, m, ctx) {
       nodes += node(x, W - NW, y, 'out');
     });
     const inSum = L.reduce((s, x) => s + x.usd, 0), outSum = R.reduce((s, x) => s + x.usd, 0);
-    const center = `<g class="fg-center"><rect x="${cx}" y="${cy - ch / 2}" width="${CW}" height="${ch}" rx="16"/>
-      <text x="${cx + CW / 2}" y="${cy - 14}" text-anchor="middle" class="fg-t">${esc(me.length > 22 ? short(ctx.address) : me)}</text>
-      <text x="${cx + CW / 2}" y="${cy + 6}" text-anchor="middle" class="fg-s">investigated wallet</text>
-      <text x="${cx + CW / 2}" y="${cy + 28}" text-anchor="middle" class="fg-in">↓ ${esc(usd(inSum) || L.reduce((s, x) => s + x.n, 0) + ' tx')}</text>
-      <text x="${cx + CW / 2}" y="${cy + 46}" text-anchor="middle" class="fg-out">↑ ${esc(usd(outSum) || R.reduce((s, x) => s + x.n, 0) + ' tx')}</text></g>`;
-    const heads = `<text x="0" y="16" class="fg-h">RECEIVED FROM (${L.length})</text><text x="${W}" y="16" class="fg-h" text-anchor="end">SENT TO (${R.length})</text>`;
+    const center = `<g class="fg-center"><rect x="${cx}" y="${cy - ch / 2}" width="${CW}" height="${ch}" rx="16" style="fill:color-mix(in srgb, var(--accent,#6366f1) 16%, var(--panel-solid,#fff));stroke:var(--accent,#6366f1);stroke-width:1.5"/>
+      <text x="${cx + CW / 2}" y="${cy - 14}" text-anchor="middle" class="fg-t" style="${INK.t}">${esc(me.length > 22 ? short(ctx.address) : me)}</text>
+      <text x="${cx + CW / 2}" y="${cy + 6}" text-anchor="middle" class="fg-s" style="${INK.s}">investigated wallet</text>
+      <text x="${cx + CW / 2}" y="${cy + 28}" text-anchor="middle" class="fg-in" style="${INK.in}">↓ ${esc(usd(inSum) || L.reduce((s, x) => s + x.n, 0) + ' tx')}</text>
+      <text x="${cx + CW / 2}" y="${cy + 46}" text-anchor="middle" class="fg-out" style="${INK.out}">↑ ${esc(usd(outSum) || R.reduce((s, x) => s + x.n, 0) + ' tx')}</text></g>`;
+    const heads = `<text x="0" y="16" class="fg-h" style="${INK.h}">RECEIVED FROM (${L.length})</text><text x="${W}" y="16" class="fg-h" text-anchor="end" style="${INK.h}">SENT TO (${R.length})</text>`;
     return `<svg viewBox="0 0 ${W} ${H + 20}" class="fg-svg" role="img" aria-label="Money flow graph"><g transform="translate(0,20)">${links}${nodes}${center}</g>${heads}</svg>`;
   }
 
