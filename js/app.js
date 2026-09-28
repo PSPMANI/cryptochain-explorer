@@ -50,13 +50,26 @@ async function route() {
   }
 }
 
+const normName = x => x.toLowerCase().replace(/[^a-z0-9]/g, '');
+function findEntities(q) {
+  const n = normName(q);
+  if (n.length < 2) return [];
+  const hits = [];
+  for (const e of DIRECTORY) {
+    const k = normName(e.name);
+    const score = k === n ? 0 : k.startsWith(n) ? 1 : k.includes(n) ? 2 : n.includes(k) && k.length >= 4 ? 3 : -1;
+    if (score >= 0) hits.push({ ...e, score, exact: score === 0 });
+  }
+  return hits.sort((a, b) => a.score - b.score || a.name.length - b.name.length);
+}
+
 function submitSearch(q) {
   q = q.trim();
   if (!q) return;
-  const norm = x => x.toLowerCase().replace(/[\s.]/g, '');
-  const ex = DIRECTORY.find(e => norm(e.name) === norm(q));
-  if (ex) { location.hash = `#/exchanges/${ex.country === 'IN' ? 'india' : 'all'}/${encodeURIComponent(ex.name)}`; return; }
   const c = detect(q);
+  const ex = !c.length || /\s/.test(q) || !/[0-9.:]/.test(q) ? findEntities(q) : [];
+  if (ex.length === 1 || (ex.length && ex[0].exact)) { location.hash = `#/exchanges/${ex[0].country === 'IN' ? 'india' : 'all'}/${encodeURIComponent(ex[0].name)}`; return; }
+  if (ex.length) { location.hash = `#/exchanges/all/${encodeURIComponent(q)}`; return; }
   if (!c.length) {
     main.innerHTML = `<div class="card error"><strong>Unrecognized input.</strong>
       <p>Enter a wallet address, a transaction hash, or a name like <code>vitalik.eth</code> or <code>root.near</code>.

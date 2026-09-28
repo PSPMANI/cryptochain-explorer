@@ -47,6 +47,13 @@ export async function exchangesPage(stale, region = 'all', selected = null) {
   const title = region === 'india' ? '🇮🇳 Indian exchanges' : region === 'all' ? '🌐 Exchanges & institutions' : `${flag(region.toUpperCase())} ${COUNTRY[region.toUpperCase()] ? COUNTRY[region.toUpperCase()].name : region}`;
   document.title = `${title} · CryptChain`;
 
+  if (sel) {
+    document.title = `${sel.name} · CryptChain`;
+    main.innerHTML = `<div class="page-head"><a class="btn ghost small-btn" href="#/exchanges/${region}">← All ${region === 'india' ? 'Indian exchanges' : 'exchanges'}</a></div><div id="ex-detail"></div>`;
+    window.scrollTo(0, 0);
+    return renderDetail(sel, stale);
+  }
+
   main.innerHTML = `
     <div class="card">
       <div class="section-head"><div><h2 class="page-title">${esc(title)}</h2>
@@ -57,10 +64,10 @@ export async function exchangesPage(stale, region = 'all', selected = null) {
           .map(([k, l]) => `<a class="tab-link ${region === k ? 'active' : ''}" href="#/exchanges/${k}">${l}</a>`).join('')}</div>
         <select id="ex-country" aria-label="Country"><option value="">More countries…</option>${countries.map(c => `<option value="${c.toLowerCase()}" ${region === c.toLowerCase() ? 'selected' : ''}>${flag(c)} ${esc(COUNTRY[c] ? COUNTRY[c].name : c)}</option>`).join('')}</select>
         <select id="ex-type" aria-label="Type"><option value="">All types</option>${Object.keys(CAT_ICON).map(c => `<option value="${c}">${CAT_ICON[c]} ${esc(CATEGORY_LABEL[c])}</option>`).join('')}</select>
-        <input class="filter-in" id="ex-filter" placeholder="Search by name" autocomplete="off">
+        <input class="filter-in" id="ex-filter" placeholder="Search by name" autocomplete="off" value="${esc(selected || '')}">
       </div>
       <div class="ex-grid" id="ex-grid">${list.map(x => `
-        <a class="ex-card ${sel && sel.name === x.name ? 'on' : ''}" href="#/exchanges/${region}/${encodeURIComponent(x.name)}" data-name="${esc(x.name.toLowerCase())}" data-cat="${x.category}">
+        <a class="ex-card" href="#/exchanges/${region}/${encodeURIComponent(x.name)}" data-name="${esc(x.name.toLowerCase().replace(/[^a-z0-9]/g, ''))}" data-cat="${x.category}">
           <div class="ex-top">${identicon(x.name, 36)}<div><b>${CAT_ICON[x.category] || ''} ${esc(x.name)}</b>
             <div class="muted small">${x.country ? `${flag(x.country)} ${esc(COUNTRY[x.country] ? COUNTRY[x.country].name : x.country)}` : ''} · ${esc(CATEGORY_LABEL[x.category] || 'Exchange')}</div></div></div>
           <div class="small">${x.wallets.some(w => w.category !== 'exploit') ? `<span class="chip ok">${(n => `${n} labeled wallet${n === 1 ? '' : 's'}`)(x.wallets.filter(w => w.category !== 'exploit').length)}</span>` : '<span class="chip">Name-based detection</span>'}
@@ -68,17 +75,17 @@ export async function exchangesPage(stale, region = 'all', selected = null) {
           ${x.note ? `<div class="muted small">${esc(x.note)}</div>` : ''}
         </a>`).join('') || '<p class="muted">No entities for this region.</p>'}</div>
     </div>
-    <div id="ex-detail">${sel ? '' : '<p class="muted center">Select an exchange or institution to see its wallets.</p>'}</div>`;
+    `;
 
   const applyFilters = () => {
-    const q = document.getElementById('ex-filter').value.trim().toLowerCase();
+    const q = document.getElementById('ex-filter').value.toLowerCase().replace(/[^a-z0-9]/g, '');
     const t = document.getElementById('ex-type').value;
     document.querySelectorAll('.ex-card').forEach(c => { c.hidden = (q && !c.dataset.name.includes(q)) || (t && c.dataset.cat !== t); });
   };
   document.getElementById('ex-filter').oninput = applyFilters;
   document.getElementById('ex-type').onchange = applyFilters;
   document.getElementById('ex-country').onchange = e => { if (e.target.value) location.hash = `#/exchanges/${e.target.value}`; };
-  if (sel) renderDetail(sel, stale);
+  if (selected) applyFilters();
 }
 
 function renderDetail(x, stale) {
@@ -88,7 +95,7 @@ function renderDetail(x, stale) {
   const order = ['⚠ Hack / exploiter wallets', ...ROLES.map(r => r[0])].filter(r => groups[r]);
   const main = x.wallets.filter(w => ['Hot wallets', 'Wallets', 'Withdrawal wallets', 'Cold wallets', 'Treasury & reserves'].includes(w.role));
   const place = x.country ? `${flag(x.country)} ${COUNTRY[x.country] ? COUNTRY[x.country].name : x.country}` : '';
-  const shown = w => [...(groups[w] || [])].sort((p, q) => (p.chainId === 'ethereum') - (q.chainId === 'ethereum') || p.chainId.localeCompare(q.chainId)).slice(0, 400);
+  const shown = w => [...(groups[w] || [])].sort((p, q) => (p.chainId === 'ethereum') - (q.chainId === 'ethereum') || p.chainId.localeCompare(q.chainId));
   const nets = {};
   for (const w of x.wallets) if (w.category !== 'exploit') nets[w.chainId] = (nets[w.chainId] || 0) + 1;
 
@@ -106,14 +113,19 @@ function renderDetail(x, stale) {
         <h3 class="${role.startsWith('⚠') ? 'out' : ''}">${esc(role)} <span class="muted">(${groups[role].length})</span></h3>
         ${role.startsWith('⚠') ? '<p class="small muted">Publicly flagged as belonging to an attacker. These are <b>not</b> the entity\'s wallets; transfers to or from them raise a ⚠ alert.</p>' : ''}
         <div class="table-scroll"><table><thead><tr><th>Wallet</th><th>Network</th><th>Label</th><th class="r">ETH balance</th><th></th></tr></thead><tbody>
-        ${shown(role).map(w => `<tr data-addr="${esc(w.address)}"><td>${link(w.chainId, 'address', w.address, short(w.address))}</td>
+        ${shown(role).map((w, i) => `<tr data-addr="${esc(w.address)}"${i >= 25 ? ' class="extra" hidden' : ''}><td>${link(w.chainId, 'address', w.address, short(w.address))}</td>
           <td class="small">${CHAIN[w.chainId] ? `<span class="dot" style="background:${CHAIN[w.chainId].color}"></span> ${esc(w.chainId === 'ethereum' ? 'EVM (all networks)' : CHAIN[w.chainId].name)}` : ''}</td><td>${esc(w.label)}</td>
           <td class="r bal muted">—</td>
           <td class="r"><a class="btn ghost small-btn" href="#/investigate/${w.chainId}/${encodeURIComponent(w.address)}">Investigate</a></td></tr>`).join('')}
-        </tbody></table></div>${groups[role].length > 400 ? `<p class="muted small">…and ${groups[role].length - 400} more (all are recognized by the app).</p>` : ''}`).join('')}
+        </tbody></table></div>${groups[role].length > 25 ? `<div class="more"><button class="btn ghost small-btn" data-more>Show all ${groups[role].length.toLocaleString()}</button></div>` : ''}`).join('')}
       <p class="muted small">Addresses are EVM wallets: the same address is also this entity's on Base, Arbitrum, Polygon, BNB Chain and the other EVM networks.</p>
     </div>`;
-  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-more]');
+    if (!b) return;
+    b.closest('.more').previousElementSibling.querySelectorAll('tr.extra').forEach(r => { r.hidden = false; });
+    b.parentElement.remove();
+  });
 
   document.getElementById('ex-bal')?.addEventListener('click', async e => {
     e.target.disabled = true; e.target.textContent = 'Loading…';
