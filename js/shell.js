@@ -7,6 +7,7 @@ import { esc, short, usd } from './ui.js';
 const PAGES = [
   { icon: '◈', title: 'Dashboard', sub: 'Live networks and prices', href: '#/' },
   { icon: '⌖', title: 'Investigate a wallet', sub: 'Follow the money through every hop, download a report', href: '#/investigate-start' },
+  { icon: '🎯', title: 'Hack tracker', sub: 'Follow stolen funds live and find freezable leads', href: '#/cases' },
   { icon: '⬡', title: 'All exchanges & institutions', sub: 'Global directory of labeled wallets', href: '#/exchanges/all' },
   { icon: '🇮🇳', title: 'Indian exchanges', sub: 'WazirX, CoinDCX, CoinSwitch, …', href: '#/exchanges/india' },
   { icon: '▤', title: 'My workspace', sub: 'Watchlist, alerts, labels, saved investigations', href: '#/account' },
@@ -29,7 +30,7 @@ function markNav() {
   const key = !a ? 'home'
     : a === 'investigate' || a === 'investigate-start' ? 'investigate'
     : a === 'exchanges' ? (b === 'india' ? 'india' : 'exchanges')
-    : a === 'account' ? 'account' : '';
+    : a === 'account' ? 'account' : a === 'cases' || a === 'case' ? 'cases' : '';
   document.querySelectorAll('[data-nav]').forEach(el => el.classList.toggle('active', el.dataset.nav === key));
 }
 

@@ -299,3 +299,14 @@ input, select, textarea { background: var(--bg); color: var(--text); border-colo
 
 .rt-badge { margin-left: auto; font-size: 10px; font-weight: 800; letter-spacing: .05em; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 7px; }
 .net-top .net-state { margin-left: 6px; }
+
+.case-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.case-form label { display: grid; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); flex: 1 1 200px; }
+.case-form label.wide { flex-basis: 100%; }
+.case-form label.chk { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.case-form input, .case-form select, .case-form textarea { padding: 9px 11px; border-radius: 9px; border: 1px solid var(--line2); background: var(--bg); color: var(--text); font: 13px var(--mono); }
+.case-form select[multiple] { font-family: var(--sans); }
+.case-tabs { margin: 14px 0 0; }
+.lead-card { border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel2); }
+.lead-card.green { border-left-color: var(--in); }
+.lead-card .section-head { margin-bottom: 4px; }

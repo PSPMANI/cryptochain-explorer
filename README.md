@@ -12,6 +12,24 @@ address's public identity, balance, tokens and transactions, updating live.
 - **Private by design**: no accounts and no server database. Each visitor's searches, watchlist, alerts, labels and saved investigations stay in their own browser; other visitors never see them. My workspace → 🗑 Clear all my data removes everything
 - **Fast**: the page shell loads about 145 KB of code; the 1.7 MB label database and the investigation tools load in the background or only when opened
 
+### 🎯 Hack tracker (`#/cases`)
+
+Open a case, paste the attacker's addresses (any chain) or import a tracker's JSON address list, and press ▶ Start live tracking:
+- every outgoing movement is recorded and classified: exchange deposit, swap/bridge, new wallet, or internal move between attacker wallets
+- swaps and bridges are followed to the next chain (THORChain / Maya, CoW Swap, Across, Stargate/LayerZero, Wormhole; Chainflip channels are detected)
+- new wallets receiving money are added to the case automatically, so the trail keeps growing on its own
+- 🟢 strong leads: money reaching an exchange, or USDT/USDC that Tether/Circle can freeze. 🟡 other leads: new attacker wallets
+- one-click "Copy for report", a downloadable case report (Markdown) and CSV of every movement
+- cases are stored only in your browser
+
+### ⚡ Real-time feed
+
+Block heights and address pages update the moment a block is produced (WebSocket feeds for 21 EVM networks, Solana and Bitcoin), with polling as a fallback.
+
+### 🛡 Scam detection
+
+Fake lookalike tokens (e.g. `ÚSDС`, fake "ETH"), tokens that are not the official contract, and address-poisoning lookalike addresses are flagged and kept out of totals. Swap and bridge contracts (THORChain, CoW Swap, LayerZero, Across, Chainflip deposit channels) are labeled.
+
 ### 📄 Report (Investigate → 📄 Report)
 
 One click produces an easy-to-understand report anyone can read, as a single HTML file that opens in any browser and prints or

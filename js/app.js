@@ -40,6 +40,8 @@ async function route() {
     if (a === 'search') return await searchPage([b, c].filter(Boolean).join('/'), stale);
     if (a === 'login') { location.replace('#/account'); return; }
     if (a === 'account') return await (await import('./pages/account.js')).accountPage(stale);
+    if (a === 'cases') return await (await import('./pages/cases.js')).casesPage();
+    if (a === 'case') { loading('Opening case…'); return await (await import('./pages/cases.js')).casePage(b, stale); }
     if (a === 'investigate-start') return investigateStart();
     if (a === 'investigate') { loading('Opening investigation…'); return await (await import('./pages/investigate.js')).investigatePage(b, c, params, stale); }
     if (a === 'exchanges') { loading('Loading exchange directory…'); return await (await import('./pages/exchanges.js')).exchangesPage(stale, b || 'all', c || null); }
