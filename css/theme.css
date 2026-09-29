@@ -296,3 +296,6 @@ th { background: var(--panel2); color: var(--muted); }
 input, select, textarea { background: var(--bg); color: var(--text); border-color: var(--line2); }
 .fg-canvas { background: var(--bg); }
 @media (max-width: 900px) { .bottomnav { background: var(--bg2); } .bottomnav a.active { color: var(--accent); background: var(--accent-soft); } }
+
+.rt-badge { margin-left: auto; font-size: 10px; font-weight: 800; letter-spacing: .05em; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 7px; }
+.net-top .net-state { margin-left: 6px; }

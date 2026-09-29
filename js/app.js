@@ -2,7 +2,8 @@ import { CHAINS, CHAIN } from './chains.js';
 import { detect } from './detect.js';
 import { getPrices, priceOf } from './prices.js';
 import { knownLabel, entityOf, INDIAN_EXCHANGES, DIRECTORY, loadLabels } from './entities.js';
-import { poll, stopAll } from './live.js';
+import { poll, stopAll, track } from './live.js';
+import { onBlock, hasRealtime, isLive } from './realtime.js';
 import { LIVE_INTERVAL } from './config.js';
 import { NotFound } from './utils.js';
 import { main, adapter, withTimeout, pool, showError, loading, toast, setQuery } from './core.js';
@@ -212,8 +213,22 @@ async function homePage(stale) {
     applyFilter();
     refreshNets(stale);
   });
+  for (const c of CHAINS) {
+    if (!hasRealtime(c.id)) continue;
+    track(onBlock(c.id, h => {
+      if (stale()) return;
+      const el = document.getElementById('net-' + c.id);
+      if (!el || el.hidden) return;
+      const hEl = el.querySelector('.h'), txt = Number(h).toLocaleString();
+      if (hEl.textContent !== txt) { hEl.textContent = txt; el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+      const st = el.querySelector('.net-state');
+      st.className = 'net-state ok rt'; st.title = 'Real-time: new block ' + txt + ' at ' + new Date().toLocaleTimeString();
+      if (!el.querySelector('.rt-badge')) el.querySelector('.net-top').insertAdjacentHTML('beforeend', '<span class="rt-badge" title="Updates the moment a block is produced">⚡ LIVE</span>');
+    }));
+  }
   await refreshNets(stale);
   poll(() => refreshNets(stale), LIVE_INTERVAL.dashboard);
+
 }
 
 const applyFilter = () => CHAINS.forEach(c => { const el = document.getElementById('net-' + c.id); if (el) el.hidden = !inFilter(c); });
@@ -249,10 +264,12 @@ async function refreshNets(stale) {
       const s = await withTimeout((await adapter(c.id)).getStats(), 15000);
       if (stale()) return;
       const h = el.querySelector('.h'), txt = s.height != null ? Number(s.height).toLocaleString() : '—';
-      if (h.textContent !== txt && h.textContent !== '—') { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
-      h.textContent = txt;
+      if (!isLive(c.id)) {
+        if (h.textContent !== txt && h.textContent !== '—') { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+        h.textContent = txt;
+      }
       el.querySelector('.net-extra').innerHTML = s.extra.slice(0, 2).map(x => `<span>${esc(x.label)}: <b>${esc(x.value)}</b></span>`).join('');
-      state.className = 'net-state ok'; state.title = 'Live · updated ' + new Date().toLocaleTimeString();
+      if (!isLive(c.id)) { state.className = 'net-state ok'; state.title = 'Live · updated ' + new Date().toLocaleTimeString(); }
     } catch (e) {
       state.className = 'net-state err'; state.title = 'Unavailable: ' + e.message;
     }
@@ -594,7 +611,7 @@ async function addressPage(chainId, addr, stale) {
     const top = freshAlerts.find(x => x.level === 'high') || freshAlerts.find(x => x.level === 'medium');
     toast(top ? top.title : `${added.length} new transaction${added.length > 1 ? 's' : ''}`, top ? top.level : '');
     if (watched && freshAlerts.length) { pushAlerts(freshAlerts); window.dispatchEvent(new Event('alerts-changed')); }
-  }, ['evm', 'utxo', 'tron'].includes(chain.family) && chain.adapter !== 'blockcypher' && chain.adapter !== 'blockchair' ? 8000 : LIVE_INTERVAL.address);
+  }, ['evm', 'utxo', 'tron'].includes(chain.family) && chain.adapter !== 'blockcypher' && chain.adapter !== 'blockchair' ? (hasRealtime(chainId) ? 30000 : 8000) : LIVE_INTERVAL.address, { chainId });
 }
 
 function addrStats(info, chain, price) {
@@ -651,7 +668,7 @@ async function txPage(chainId, hash, stale) {
       }
       await render();
       if (settled(tx)) stop();
-    }, LIVE_INTERVAL.tx);
+    }, LIVE_INTERVAL.tx, { chainId });
   }
 }
 
