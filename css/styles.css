@@ -5,7 +5,7 @@
   --mono: ui-monospace, 'Cascadia Code', Consolas, 'SF Mono', monospace;
   color-scheme: dark;
 }
-@media all {
+@media not all {
   :root {
     --bg: #f5f7fb; --panel: #ffffff; --panel2: #f0f3f9; --line: #e2e7f0; --line2: #cfd7e6;
     --text: #141a26; --muted: #5d6a82; --accent: #2f66f0; --accent2: #2f66f0;
@@ -285,7 +285,7 @@ span.out { color: var(--out); }
   --viz-in: #3987e5; --viz-out: #e66767; --viz-grid: #2c2c2a; --viz-axis: #383835; --viz-ink: #ffffff; --viz-ink2: #c3c2b7; --viz-muted: #898781;
   --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec; --seq-7: #9ec5f4; --seq-0: #1b2230;
 }
-@media all {
+@media not all {
   :root {
     --cat-exchange: #eb6834; --cat-bridge: #2a78d6; --cat-dex: #1baf7a; --cat-other: #52514e; --cat-none: #898781; --cat-root: #2f66f0;
     --viz-in: #2a78d6; --viz-out: #e34948; --viz-grid: #e1e0d9; --viz-axis: #c3c2b7; --viz-ink: #0b0b0b; --viz-ink2: #52514e; --viz-muted: #898781;
