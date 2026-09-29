@@ -2,6 +2,7 @@
 import { ENTITIES } from './data/entity-directory.js';
 import { peekLive } from './labels-live.js';
 import { legacyToCash } from './cashaddr.js';
+import { SERVICE_ADDRESSES } from './scam.js';
 
 export const CATEGORY_LABEL = {
   exchange: 'Exchange', bridge: 'Bridge', dex: 'DEX', token: 'Token', burn: 'Burn address',
@@ -89,6 +90,8 @@ const EVM = {
   '0x4200000000000000000000000000000000000016': E('OP Stack Bridge', 'bridge', 'L2→L1 Message Passer (withdraw to Ethereum)'),
   '0x0000000000000000000000000000000000000064': E('Arbitrum Bridge', 'bridge', 'ArbSys (withdraw to Ethereum)'),
 };
+
+for (const [k, v] of Object.entries(SERVICE_ADDRESSES)) if (!EVM[k]) EVM[k] = E(v.name, v.category, v.label);
 
 const OTHER = {
   bitcoin: {

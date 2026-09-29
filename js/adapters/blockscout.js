@@ -183,6 +183,8 @@ export default function create(chain) {
           to: tt.to && tt.to.hash, toName: tt.to && (tt.to.ens_domain_name || tt.to.name) || null, toEntity: fromBlockscout(tt.to),
           amount: nft ? 1 : fromUnits(tt.total && tt.total.value, Number(tt.total && tt.total.decimals || tt.token && tt.token.decimals || 0)),
           symbol: nft ? `${sym} #${String(tt.total.token_id).slice(0, 10)}` : sym,
+          token: tt.token && (tt.token.address_hash || tt.token.address) || null,
+          scam: !!(tt.token && (tt.token.reputation === 'scam' || tt.token.is_scam)),
         };
       }),
       extra,

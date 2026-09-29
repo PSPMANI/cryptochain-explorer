@@ -102,7 +102,7 @@ export class FullTrace extends Trace {
     const bridgeRows = [];
     for (const r of outs) {
       const ent = r.entity || entityOf(CHAIN[r.chainId], r.counterparty, null, r.cpName);
-      if (ent && ent.category === 'bridge') { bridgeRows.push({ r, ent }); continue; }
+      if (ent && (ent.category === 'bridge' || ent.name === 'CoW Swap')) { bridgeRows.push({ r, ent }); continue; }
       const k = nid(r.chainId, r.counterparty);
       const g = groups.get(k) || { chainId: r.chainId, address: r.counterparty, ent, name: r.cpName, usd: 0, tx: r, first: r.time };
       g.usd += r.usdValue;
@@ -110,7 +110,7 @@ export class FullTrace extends Trace {
       groups.set(k, g);
     }
     for (const { r, ent } of bridgeRows.slice(0, 12)) {
-      const b = await withTimeout(resolveBridgeTx(r.chainId, r.hash, node.address), 20000).catch(() => null);
+      const b = await withTimeout(resolveBridgeTx(r.chainId, r.hash, node.address, { to: r.counterparty, value: r.value, time: r.time }), 20000).catch(() => null);
       const dst = b && CHAIN[b.dstChain];
       if (b && b.recipient && dst) {
         const k = nid(b.dstChain, b.recipient);

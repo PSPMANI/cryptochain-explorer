@@ -4,6 +4,7 @@ import { resolveBridgeTx, chainName } from './crosschain.js';
 import { liveLabel, prefetchLabels, hasLiveLabels } from './labels-live.js';
 import { adapter, withTimeout } from './core.js';
 import { amount, short } from './ui.js';
+import { serviceOf } from './scam.js';
 
 const BRIDGE_METHOD = /^(depositV3|depositV3Now|deposit(ETH|ERC20)(To)?|bridge\w*|outboundTransfer\w*|sendToL2|depositForBurn\w*|transferTokens\w*|wrapAndTransfer\w*|sendFrom|send(OFT|Token)\w*|startBridgeTokens\w*|swapAndStartBridgeTokens\w*|swapAndBridge|initiateWithdrawal|withdrawTo|depositTransaction)$/;
 
@@ -13,6 +14,8 @@ export function depositCheck(chainId, address) {
   const key = `${chainId}:${address.toLowerCase()}`;
   if (!depositCache.has(key)) {
     depositCache.set(key, (async () => {
+      const svc = await serviceOf(chainId, address);
+      if (svc) return { ...svc, inferred: false };
       const chain = CHAIN[chainId];
       const a = await adapter(chainId);
       const page = await withTimeout(a.getTxs(address), 15000);

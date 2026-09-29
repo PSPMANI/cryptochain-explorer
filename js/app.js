@@ -15,6 +15,7 @@ import { mountOutgoing } from './pages/xfers.js';
 import { alertItem, chainLabel } from './pages/shared.js';
 import { liveLabel, prefetchLabels, hasLiveLabels } from './labels-live.js';
 import { usdOf } from './investigate.js';
+import { isFakeToken, lookalike } from './scam.js';
 import { flag, COUNTRY, setCustomLabels, customLabelOf } from './entities.js';
 import { esc, short, amount, usd, compact, timeCell, identicon, chainDot, chainChip, link, copyBtn, statusChip, dirChip, stat } from './ui.js';
 
@@ -419,6 +420,16 @@ async function addressPage(chainId, addr, stale) {
     const ent = entOf(p, pEnt, pName);
     return `${link(chainId, 'address', p, pName || (ent && ent.label) || null)}${ent && ent.category !== 'other' ? ' ' + entityBadge(ent) : ''}`;
   };
+  const cps = new Set();
+  const poisonOf = t => {
+    const cp = t.direction === 'in' ? t.from : t.to;
+    if (!cp) return null;
+    const fake = isFakeToken({ ...t, chainId });
+    const zero = t.token && !t.value;
+    if (!fake && !zero) return null;
+    for (const o of cps) if (lookalike(o, cp)) return `Lookalike of ${short(o)}: address-poisoning spam, never copy it`;
+    return fake ? 'Fake token imitating a real one' : null;
+  };
   const row = t => `<tr data-h="${esc(t.hash)}" data-dir="${esc(t.direction || '')}"${[t.from, t.to].some(p => { const e = p && !isMe(p) && entOf(p, p === t.to ? t.toEntity : t.fromEntity, p === t.to ? t.toName : t.fromName); return e && FLOW_CATS.has(e.category); }) ? ' data-ent="1"' : ''}>
       <td>${link(chainId, 'tx', t.hash)}${t.status === 'failed' ? ' ' + statusChip('failed') : ''}</td>
       <td><span class="chip method" title="${esc(t.method || '')}">${esc(t.method && t.method.length > 22 ? t.method.slice(0, 20) + '…' : t.method || '—')}</span></td>
@@ -426,9 +437,10 @@ async function addressPage(chainId, addr, stale) {
       <td>${isMe(t.from) ? self() : party(t.from, t.fromName, t.fromEntity)}</td>
       <td>${dirChip(t.direction)}</td>
       <td>${isMe(t.to) ? self() : party(t.to, t.toName, t.toEntity)}</td>
-      <td class="r ${t.direction === 'in' ? 'in' : t.direction === 'out' ? 'out' : ''}">${amount(t.value)} <span class="muted">${esc(t.symbol)}</span></td>
+      <td class="r ${t.direction === 'in' ? 'in' : t.direction === 'out' ? 'out' : ''}">${amount(t.value)} <span class="muted">${esc(t.symbol)}</span>${(w => w ? ` <span class="ent danger" title="${esc(w)}"><span class="ent-i">⚠</span>${/Lookalike/.test(w) ? 'Poisoning' : 'Fake token'}</span>` : '')(poisonOf(t))}</td>
       <td class="r muted">${t.fee != null ? amount(t.fee) : '—'}</td></tr>`;
   const append = (items, where = 'beforeend') => {
+    for (const t of items) { const cp = t.direction === 'in' ? t.from : t.to; if (cp && !isFakeToken({ ...t, chainId }) && !(t.token && !t.value)) cps.add(cp); }
     const fresh = items.filter(t => !rows.has(t.hash));
     tbody.insertAdjacentHTML(where, fresh.map(row).join(''));
     fresh.forEach(t => rows.set(t.hash, t));
@@ -620,10 +632,10 @@ async function txPage(chainId, hash, stale) {
 
   const sender = tx.inputs[0] && tx.inputs[0].address;
   const findBridge = async () => {
-    const b = await withTimeout(resolveBridgeTx(chainId, tx.hash, sender), 20000).catch(() => null);
+    const b = await withTimeout(resolveBridgeTx(chainId, tx.hash, sender, { to: tx.outputs[0] && tx.outputs[0].address, value: tx.value, time: tx.time }), 20000).catch(() => null);
     if (b && !stale()) { bridge = b; await render(); }
   };
-  if (chain.family !== 'utxo') findBridge();
+  findBridge();
 
   const settled = t => t.status !== 'pending' && (t.confirmations == null || t.confirmations >= 100) && (!bridge || bridge.status !== 'pending');
   if (!settled(tx)) {
@@ -660,15 +672,17 @@ function txView(tx, chain, price, bridge) {
   return `
     ${exOut ? `<div class="notice flag ex">🏦 <b>Deposit to ${esc(exOut.name)}</b>: this transaction sends funds to ${esc(exOut.label)}.</div>` : ''}
     ${exIn ? `<div class="notice flag ex">🏦 <b>Withdrawal from ${esc(exIn.name)}</b>: funds come from ${esc(exIn.label)}.</div>` : ''}
-    ${bridge ? `<div class="card bridge-card"><div class="section-head"><h2>🌉 Cross-chain transfer via ${esc(bridge.app && bridge.app !== bridge.protocol ? `${bridge.app} (${bridge.protocol})` : bridge.protocol)}</h2>
+    ${bridge ? `<div class="card bridge-card"><div class="section-head"><h2>${bridge.srcChain === bridge.dstChain ? '🔁 Swap via ' : bridge.dstChain ? '🌉 Cross-chain transfer via ' : '🔁 Swapped via '}${esc(bridge.app && bridge.app !== bridge.protocol ? `${bridge.app} (${bridge.protocol})` : bridge.protocol)}</h2>
         <span class="chip ${bridge.status === 'completed' ? 'ok' : bridge.status === 'failed' ? 'fail' : 'pend'}">${esc(bridge.status)}</span></div>
       <div class="bridge-route">
         <div>${chainLabel(bridge.srcChain)}<div class="small">${bridge.srcTx && CHAIN[bridge.srcChain] ? link(bridge.srcChain, 'tx', bridge.srcTx) : ''}</div></div>
         <div class="bridge-arrow">${bridge.amount != null ? `${amount(bridge.amount)} ${esc(bridge.symbol || '')}` : ''}${bridge.usd ? `<div class="muted small">${usd(bridge.usd)}</div>` : ''}<div>⟶</div></div>
-        <div>${chainLabel(bridge.dstChain)}<div class="small">${bridge.dstTx ? (dst ? link(bridge.dstChain, 'tx', bridge.dstTx) : esc(short(bridge.dstTx))) : '<span class="chip pend">in flight</span>'}</div></div>
+        <div>${bridge.dstChain ? chainLabel(bridge.dstChain) : '<b>Unknown chain</b>'}<div class="small">${bridge.dstTx ? (dst ? link(bridge.dstChain, 'tx', bridge.dstTx) : esc(short(bridge.dstTx))) : bridge.dstChain === bridge.srcChain ? '<span class="chip ok">same chain</span>' : '<span class="chip pend">in flight</span>'}</div></div>
       </div>
       ${bridge.recipient ? `<p>Recipient on ${esc(dst ? dst.name : bridge.dstChain)}: ${dst ? link(bridge.dstChain, 'address', bridge.recipient, dstEnt ? dstEnt.label : null) : `<span class="mono">${esc(bridge.recipient)}</span>`} ${entityBadge(dstEnt)}
-        ${dstEnt && dstEnt.category === 'exchange' ? '<b class="out">→ funds are going to an exchange</b>' : ''}</p>` : ''}
+        ${dstEnt && dstEnt.category === 'exchange' ? '<b class="out">→ funds are going to an exchange</b>' : ''}
+        ${dst ? ` <a class="btn ghost small-btn" href="#/investigate/${esc(bridge.dstChain)}/${encodeURIComponent(bridge.recipient)}">Follow this wallet →</a>` : ''}</p>` : ''}
+      ${bridge.note ? `<p class="muted small">${esc(bridge.note)} ${bridge.link ? `<a href="${esc(bridge.link)}" target="_blank" rel="noopener">Open Chainflip explorer ↗</a>` : ''}</p>` : ''}
     </div>` : ''}
     <div class="card">
       <div class="card-head">${chainChip(chain)}<span class="chip">Transaction</span>${statusChip(tx.status)}
@@ -695,7 +709,7 @@ function txView(tx, chain, price, bridge) {
         const te = entityOf(chain, t.to, t.toEntity, t.toName), fe = entityOf(chain, t.from, t.fromEntity, t.fromName);
         return `<tr><td>${link(c, 'address', t.from, t.fromName || (fe && fe.label) || null)} ${fe && fe.category !== 'other' ? entityBadge(fe) : ''}</td><td class="muted">→</td>
         <td>${link(c, 'address', t.to, t.toName || (te && te.label) || null)} ${te && te.category !== 'other' ? entityBadge(te) : ''}</td>
-        <td class="r mono">${amount(t.amount)}</td><td><b>${esc(t.symbol)}</b></td></tr>`;
+        <td class="r mono">${amount(t.amount)}</td><td><b>${esc(t.symbol)}</b>${isFakeToken({ ...t, chainId: c }) ? ' <span class="ent danger" title="This token imitates a real one (wrong contract or lookalike letters). It has no value."><span class="ent-i">⚠</span>Fake token</span>' : ''}</td></tr>`;
       }).join('')}
       </tbody></table></div></div>` : ''}
     ${tx.extra && tx.extra.length ? `<div class="card"><h2>Details</h2><dl class="details">

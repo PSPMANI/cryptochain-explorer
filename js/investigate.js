@@ -1,6 +1,7 @@
 import { CHAIN } from './chains.js';
 import { adapter, withTimeout } from './core.js';
 import { entityOf } from './entities.js';
+import { isFakeToken } from './scam.js';
 
 const STABLES = new Set(['USDT', 'USDC', 'DAI', 'USDS', 'USDE', 'FDUSD', 'PYUSD', 'TUSD', 'USDD', 'USDC.E', 'USDT0', 'USD₮0', 'USDBC', 'RLUSD', 'USDT.E']);
 
@@ -31,7 +32,7 @@ export async function collect(chainId, address, { maxItems = 500, onProgress = (
 export function suspiciousToken(t) {
   if (!t.token) return false;
   const chain = CHAIN[t.chainId];
-  return !!t.scam || /[^\x20-\x7E]/.test(t.symbol || '') || String(t.symbol).toUpperCase() === chain.symbol;
+  return !!t.scam || isFakeToken(t) || /[^\x20-\x7E]/.test(t.symbol || '') || String(t.symbol).toUpperCase() === chain.symbol;
 }
 
 export function usdOf(t, prices) {
